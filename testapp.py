@@ -100,13 +100,30 @@ def ai_convert_first_singular_to_plural(text):
         return ""
 
 ########################################
-# Funzione per "wrap" del testo convertito in HTML
+# Funzione per creare un documento HTML minimale
+########################################
+def create_minimal_html(converted_text):
+    # Suddivide il testo convertito per newline e crea un <p> per ogni riga non vuota
+    paragraphs = "".join(f"<p>{line.strip()}</p>" for line in converted_text.splitlines() if line.strip())
+    minimal_html = f"""<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<title>Documento Revisionato</title>
+</head>
+<body>
+{paragraphs}
+</body>
+</html>"""
+    return minimal_html
+
+########################################
+# Funzione per "wrap" del testo convertito in HTML usando il documento originale
 ########################################
 def wrap_converted_text(original_html, converted_text):
     """
-    Estrae il tag <head> dall'HTML originale e crea un nuovo <body>
-    in cui ogni riga (o blocco separato da newline) del testo convertito
-    diventa un paragrafo (<p>).
+    Mantiene il <head> originale e crea un nuovo <body> formattato
+    con paragrafi per il testo convertito.
     """
     soup = BeautifulSoup(original_html, "html.parser")
     head = soup.head
@@ -116,7 +133,6 @@ def wrap_converted_text(original_html, converted_text):
             p = soup.new_tag("p")
             p.string = line.strip()
             new_body.append(p)
-    # Se c'era già un body, sostituiscilo, altrimenti aggiungi il nuovo body
     if soup.body:
         soup.body.replace_with(new_body)
     else:
@@ -265,27 +281,24 @@ if uploaded_file is not None:
         if file_extension in ["html", "md"]:
             file_content = file_bytes.decode("utf-8")
             if file_extension == "html":
-                # Per file HTML, estrai il tag <head> e il contenuto del <body>
+                # Per i file HTML, estrai il tag <head> e il contenuto del <body>
                 soup = BeautifulSoup(file_content, "html.parser")
                 head = soup.head
                 if not head:
                     st.error("Il file HTML non contiene un tag <head>.")
                 else:
                     body = soup.body
-                    if body:
-                        original_body_text = body.get_text(separator="\n")
-                    else:
-                        original_body_text = ""
+                    original_body_text = body.get_text(separator="\n") if body else ""
                     if st.button("Genera Anteprima Conversione Completa in Plurale"):
                         converted_text = ai_convert_first_singular_to_plural(original_body_text)
                         st.session_state.converted_text = converted_text
                     if "converted_text" in st.session_state:
                         st.subheader("📌 Testo Revisionato (Conversione Completa in Plurale)")
-                        # Ricrea un nuovo body con il testo convertito, suddividendo per newline
-                        final_html = wrap_converted_text(file_content, st.session_state.converted_text)
-                        st.components.v1.html(final_html, height=500, scrolling=True)
+                        # Invece di reinserire nel documento originale, creiamo un HTML minimale
+                        minimal_html = create_minimal_html(st.session_state.converted_text)
+                        st.components.v1.html(minimal_html, height=500, scrolling=True)
                         st.download_button("📥 Scarica File Revisionato",
-                                           data=final_html.encode("utf-8"),
+                                           data=minimal_html.encode("utf-8"),
                                            file_name="document_revised.html",
                                            mime="text/html")
             else:
@@ -367,7 +380,7 @@ if uploaded_file is not None:
                     for blocco, info in scelte_utente.items():
                         if info["azione"] == "Riscrivi":
                             prev_blocco, next_blocco = extract_context(blocchi, blocco)
-                            mod_blocco = ai_rewrite_text(blocco, prev_blocco, next_bloco, info["tono"])
+                            mod_blocco = ai_rewrite_text(blocco, prev_blocco, next_blocco, info["tono"])
                             modifications[blocco] = mod_blocco
                         elif info["azione"] == "Elimina":
                             modifications[blocco] = ""
