@@ -12,7 +12,7 @@ from PyPDF2 import PdfReader
 from fpdf import FPDF
 
 ########################################
-# 1) Carica variabili d'ambiente (solo Python)
+# 1) Carica variabili d'ambiente
 ########################################
 load_dotenv()
 
@@ -35,11 +35,10 @@ if not API_KEY:
     st.error("⚠️ Errore: API Key di OpenRouter non trovata! Impostala come variabile d'ambiente o in st.secrets.")
     st.stop()
 
-# Inizializza il client OpenAI per OpenRouter
 client = openai.OpenAI(api_key=API_KEY, base_url="https://openrouter.ai/api/v1")
 
 ########################################
-# Pattern critici per la revisione (esempio)
+# Pattern critici per la revisione
 ########################################
 CRITICAL_PATTERNS = [
     r"\bIlias Contreas\b",
@@ -78,13 +77,9 @@ TONE_OPTIONS = {
 }
 
 ########################################
-# Funzione AI per conversione da prima persona singolare a plurale
+# Funzione AI per conversione in plurale
 ########################################
 def ai_convert_first_singular_to_plural(text):
-    """
-    Usa l'AI per convertire il testo da prima persona singolare a plurale,
-    mantenendo inalterato il contenuto e il senso logico.
-    """
     prompt = (
         "Riscrivi il seguente testo modificando esclusivamente il modo di interloquire da prima persona singolare a prima persona plurale. "
         "Mantieni invariato il contenuto e il senso logico.\n\n"
@@ -98,19 +93,16 @@ def ai_convert_first_singular_to_plural(text):
         )
         if response and hasattr(response, "choices") and response.choices:
             return response.choices[0].message.content.strip()
-        error_message = "⚠️ Errore: Nessun testo valido restituito dall'API."
-        logger.error(error_message)
-        return error_message
+        logger.error("⚠️ Errore: Nessun testo valido restituito dall'API.")
+        return ""
     except Exception as e:
-        error_message = f"⚠️ Errore nell'elaborazione: {e}"
-        logger.error(error_message)
-        return error_message
+        logger.error(f"⚠️ Errore nell'elaborazione: {e}")
+        return ""
 
 ########################################
-# Altre funzioni di supporto
+# Funzioni di supporto
 ########################################
 def extract_context(blocks, selected_block):
-    """Estrae il blocco precedente e successivo per fornire contesto al modello."""
     try:
         index = blocks.index(selected_block)
     except ValueError:
@@ -121,7 +113,6 @@ def extract_context(blocks, selected_block):
     return prev_block, next_block
 
 def ai_rewrite_text(text, prev_text, next_text, tone):
-    """Richiede all'API di riscrivere il testo in base al tono selezionato."""
     prompt = (
         f"Contesto:\nPrecedente: {prev_text}\nTesto: {text}\nSuccessivo: {next_text}\n\n"
         f"Riscrivi il 'Testo' in tono '{tone}'. Rimuovi eventuali dettagli personali o identificabili. "
@@ -135,16 +126,13 @@ def ai_rewrite_text(text, prev_text, next_text, tone):
         )
         if response and hasattr(response, "choices") and response.choices:
             return response.choices[0].message.content.strip()
-        error_message = "⚠️ Errore: Nessun testo valido restituito dall'API."
-        logger.error(error_message)
-        return error_message
+        logger.error("⚠️ Errore: Nessun testo valido restituito dall'API.")
+        return ""
     except Exception as e:
-        error_message = f"⚠️ Errore nell'elaborazione: {e}"
-        logger.error(error_message)
-        return error_message
+        logger.error(f"⚠️ Errore nell'elaborazione: {e}")
+        return ""
 
 def process_html_content(html_content, modifications, highlight=False):
-    """Sostituisce i blocchi modificati all'interno del contenuto HTML."""
     soup = BeautifulSoup(html_content, "html.parser")
     for tag in soup.find_all(["p", "span", "div", "li", "a", "h5"]):
         if tag.string:
@@ -161,7 +149,6 @@ def process_html_content(html_content, modifications, highlight=False):
     return str(soup)
 
 def generate_html_preview(blocks, modifications, highlight=False):
-    """Genera un'anteprima HTML evidenziata."""
     html = ""
     for block in blocks:
         mod_text = modifications.get(block, block)
@@ -172,7 +159,6 @@ def generate_html_preview(blocks, modifications, highlight=False):
     return html
 
 def process_file_content(file_content, file_extension):
-    """Elabora il contenuto per file HTML/Markdown e ritorna (lista_blocchi, contenuto_html)."""
     if file_extension == "html":
         html_content = file_content
     elif file_extension == "md":
@@ -186,7 +172,6 @@ def process_file_content(file_content, file_extension):
     return [], ""
 
 def process_doc_file(uploaded_file):
-    """Estrae i paragrafi da un file Word."""
     try:
         doc = Document(uploaded_file)
         paragraphs = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
@@ -196,7 +181,6 @@ def process_doc_file(uploaded_file):
         st.stop()
 
 def process_pdf_file(uploaded_file):
-    """Estrae il testo da un file PDF."""
     try:
         pdf_reader = PdfReader(uploaded_file)
     except Exception as e:
@@ -210,15 +194,9 @@ def process_pdf_file(uploaded_file):
     return paragraphs
 
 def filtra_blocchi(blocchi):
-    """Filtra i blocchi che corrispondono ai pattern critici."""
     return {f"{i}_{b}": b for i, b in enumerate(blocchi) if any(pattern.search(b) for pattern in compiled_patterns)}
 
 def process_pdf_with_overlay(uploaded_file, modifications):
-    """
-    Apre il PDF originale con PyMuPDF (fitz), cerca i blocchi di testo che contengono il testo originale (presenti in modifications),
-    aggiunge un'annotazione di redazione per cancellare il testo originale e inserisce il testo revisionato nello stesso rettangolo.
-    Ritorna il PDF modificato come bytes.
-    """
     import fitz  # PyMuPDF
     doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
     for page in doc:
@@ -238,10 +216,6 @@ def process_pdf_with_overlay(uploaded_file, modifications):
 ########################################
 # Modalità di revisione
 ########################################
-# Modalità:
-# - "Riscrittura blocchi critici": revisiona solo i blocchi individuati tramite pattern.
-# - "Conversione completa in plurale": converte l'intero testo da prima persona singolare a plurale usando AI.
-# - "Blocchi critici + conversione completa": applica la revisione sui blocchi e converte l'intero testo in plurale.
 modalita = st.radio(
     "Modalità di revisione:",
     ("Riscrittura blocchi critici", "Conversione completa in plurale", "Blocchi critici + conversione completa")
@@ -249,7 +223,7 @@ modalita = st.radio(
 global_conversion = modalita in ["Conversione completa in plurale", "Blocchi critici + conversione completa"]
 
 ########################################
-# Logica principale Streamlit
+# Logica principale
 ########################################
 st.title("📄 Revisione Documenti")
 st.write("Carica un file (HTML, Markdown, Word o PDF) e scegli come intervenire sul testo.")
@@ -257,9 +231,8 @@ st.write("Carica un file (HTML, Markdown, Word o PDF) e scegli come intervenire 
 uploaded_file = st.file_uploader("📂 Seleziona un file (html, md, doc, docx, pdf)", type=["html", "md", "doc", "docx", "pdf"])
 
 if uploaded_file is not None:
-    # Leggi il file una sola volta
+    # Leggi il file una sola volta e salva i byte
     file_bytes = uploaded_file.read()
-    # Riposiziona il puntatore se necessario
     uploaded_file.seek(0)
     file_extension = uploaded_file.name.split('.')[-1].lower()
     
@@ -267,49 +240,60 @@ if uploaded_file is not None:
     if modalita == "Conversione completa in plurale":
         if file_extension in ["html", "md"]:
             file_content = file_bytes.decode("utf-8")
-            converted_text = ai_convert_first_singular_to_plural(file_content)
-            st.subheader("📌 Testo Revisionato (Conversione Completa in Plurale)")
-            if file_extension == "html":
-                # Aggiungi wrapper se necessario per forzare il rendering grafico
-                if "<html" not in converted_text.lower():
-                    converted_text = f"<html><body>{converted_text}</body></html>"
-                st.components.v1.html(converted_text, height=500, scrolling=True)
-            else:
-                st.write(converted_text)
-            if st.button("📥 Scarica File Revisionato"):
-                st.download_button("Scarica Revisionato", converted_text.encode("utf-8"),
-                                   "document_revised.html" if file_extension=="html" else "document_revised.txt",
-                                   "text/html" if file_extension=="html" else "text/plain")
+            if st.button("Genera Anteprima Conversione Completa in Plurale"):
+                converted_text = ai_convert_first_singular_to_plural(file_content)
+                st.session_state.converted_text = converted_text
+            if "converted_text" in st.session_state:
+                st.subheader("📌 Testo Revisionato (Conversione Completa in Plurale)")
+                converted_text = st.session_state.converted_text
+                if file_extension == "html":
+                    if "<html" not in converted_text.lower():
+                        converted_text = f"<html><body>{converted_text}</body></html>"
+                    st.components.v1.html(converted_text, height=500, scrolling=True)
+                else:
+                    st.write(converted_text)
+                st.download_button("📥 Scarica File Revisionato",
+                                   data=converted_text.encode("utf-8"),
+                                   file_name="document_revised.html" if file_extension=="html" else "document_revised.txt",
+                                   mime="text/html" if file_extension=="html" else "text/plain")
         elif file_extension in ["doc", "docx"]:
             paragraphs = process_doc_file(io.BytesIO(file_bytes))
             full_text = "\n".join(paragraphs)
-            converted_text = ai_convert_first_singular_to_plural(full_text)
-            st.subheader("📌 Testo Revisionato (Conversione Completa in Plurale)")
-            st.write(converted_text)
-            if st.button("📥 Scarica Documento Revisionato"):
+            if st.button("Genera Anteprima Conversione Completa in Plurale"):
+                converted_text = ai_convert_first_singular_to_plural(full_text)
+                st.session_state.converted_text = converted_text
+            if "converted_text" in st.session_state:
+                st.subheader("📌 Testo Revisionato (Conversione Completa in Plurale)")
+                st.write(st.session_state.converted_text)
                 new_doc = Document()
-                new_doc.add_paragraph(converted_text)
+                new_doc.add_paragraph(st.session_state.converted_text)
                 buffer = io.BytesIO()
                 new_doc.save(buffer)
-                st.download_button("Scarica Documento Revisionato", buffer.getvalue(),
-                                   "document_revised.docx",
-                                   "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+                st.download_button("📥 Scarica Documento Revisionato",
+                                   data=buffer.getvalue(),
+                                   file_name="document_revised.docx",
+                                   mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
         elif file_extension == "pdf":
             paragraphs = process_pdf_file(io.BytesIO(file_bytes))
             full_text = "\n".join(paragraphs)
-            converted_text = ai_convert_first_singular_to_plural(full_text)
-            pdf = FPDF()
-            pdf.add_page()
-            pdf.set_auto_page_break(auto=True, margin=15)
-            pdf.set_font("Arial", size=12)
-            pdf.multi_cell(0, 10, converted_text)
-            buffer = io.BytesIO()
-            pdf.output(buffer, 'F')
-            st.subheader("📌 PDF Revisionato (Conversione Completa in Plurale)")
-            if st.button("📥 Scarica PDF Revisionato"):
-                st.download_button("Scarica PDF Revisionato", buffer.getvalue(), "document_revised.pdf", "application/pdf")
+            if st.button("Genera Anteprima Conversione Completa in Plurale"):
+                converted_text = ai_convert_first_singular_to_plural(full_text)
+                st.session_state.converted_text = converted_text
+            if "converted_text" in st.session_state:
+                st.subheader("📌 PDF Revisionato (Conversione Completa in Plurale)")
+                pdf = FPDF()
+                pdf.add_page()
+                pdf.set_auto_page_break(auto=True, margin=15)
+                pdf.set_font("Arial", size=12)
+                pdf.multi_cell(0, 10, st.session_state.converted_text)
+                buffer = io.BytesIO()
+                pdf.output(buffer, 'F')
+                st.download_button("📥 Scarica PDF Revisionato",
+                                   data=buffer.getvalue(),
+                                   file_name="document_revised.pdf",
+                                   mime="application/pdf")
     
-    # Modalità "Riscrittura blocchi critici" oppure "Blocchi critici + conversione completa"
+    # Modalità "Riscrittura blocchi critici" o "Blocchi critici + conversione completa"
     else:
         modifications = {}
         scelte_utente = {}
@@ -339,7 +323,7 @@ if uploaded_file is not None:
                     for blocco, info in scelte_utente.items():
                         if info["azione"] == "Riscrivi":
                             prev_blocco, next_blocco = extract_context(blocchi, blocco)
-                            mod_blocco = ai_rewrite_text(blocco, prev_blocco, next_blocco, info["tono"])
+                            mod_blocco = ai_rewrite_text(blocco, prev_blocco, next_bloco, info["tono"])
                             modifications[blocco] = mod_blocco
                         elif info["azione"] == "Elimina":
                             modifications[blocco] = ""
@@ -351,7 +335,10 @@ if uploaded_file is not None:
                     st.success("✅ Revisione completata!")
                     st.subheader("🌍 Anteprima con Testo Revisionato")
                     st.components.v1.html(final_content, height=500, scrolling=True)
-                    st.download_button("📥 Scarica HTML Revisionato", final_content.encode("utf-8"), "document_revised.html", "text/html")
+                    st.download_button("📥 Scarica HTML Revisionato",
+                                       data=final_content.encode("utf-8"),
+                                       file_name="document_revised.html",
+                                       mime="text/html")
             else:
                 st.info("Non sono state trovate corrispondenze per i criteri di ricerca nel testo.")
         
@@ -395,9 +382,10 @@ if uploaded_file is not None:
                     new_doc.save(buffer)
                     st.success("✅ Revisione completata!")
                     st.subheader("🌍 Anteprima Testo (Word)")
-                    st.download_button("📥 Scarica Documento Word Revisionato", buffer.getvalue(),
-                                       "document_revised.docx",
-                                       "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+                    st.download_button("📥 Scarica Documento Word Revisionato",
+                                       data=buffer.getvalue(),
+                                       file_name="document_revised.docx",
+                                       mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
             else:
                 st.info("Non sono state trovate corrispondenze per i criteri di ricerca nel documento Word.")
         
@@ -438,6 +426,9 @@ if uploaded_file is not None:
                     with st.spinner("🔄 Riscrittura in corso..."):
                         revised_pdf = process_pdf_with_overlay(io.BytesIO(file_bytes), modifications)
                     st.success("✅ Revisione completata!")
-                    st.download_button("📥 Scarica PDF Revisionato", revised_pdf, "document_revised.pdf", "application/pdf")
+                    st.download_button("📥 Scarica PDF Revisionato",
+                                       data=revised_pdf,
+                                       file_name="document_revised.pdf",
+                                       mime="application/pdf")
             else:
                 st.info("Non sono state trovate corrispondenze per i criteri di ricerca nel documento PDF.")
