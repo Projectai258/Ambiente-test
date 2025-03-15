@@ -81,18 +81,27 @@ TONE_OPTIONS = {
 # Funzione per conversione da prima persona singolare a plurale
 ########################################
 def convert_first_singular_to_plural(text):
-    # Mappa delle sostituzioni: espandila secondo necessità.
+    # Mappa delle sostituzioni per la conversione
     replacements = {
-        r'\b[Ii]o\b': 'noi',
-        r'\b[Mm]io\b': 'nostro',
-        r'\b[Mm]ia\b': 'nostra',
-        r'\b[Mm]iei\b': 'nostri',
-        r'\b[Mm]ie\b': 'nostre',
-        r'\b[Mm]i\b': 'ci',
+        "io": "noi",
+        "mio": "nostro",
+        "mia": "nostra",
+        "miei": "nostri",
+        "mie": "nostre",
+        "mi": "ci"
     }
-    for pattern, repl in replacements.items():
-        text = re.sub(pattern, repl, text)
-    return text
+    
+    def replacer(match):
+        word = match.group(0)
+        lower_word = word.lower()
+        replaced = replacements.get(lower_word, word)
+        # Mantieni la capitalizzazione se il primo carattere era maiuscolo
+        if word[0].isupper():
+            replaced = replaced.capitalize()
+        return replaced
+
+    pattern = re.compile(r'\b(io|mio|mia|miei|mie|mi)\b', re.IGNORECASE)
+    return pattern.sub(replacer, text)
 
 ########################################
 # Funzioni di supporto comuni
@@ -259,13 +268,15 @@ if uploaded_file is not None:
             file_content = uploaded_file.read().decode("utf-8")
             converted_text = convert_first_singular_to_plural(file_content)
             st.subheader("📌 Testo Revisionato (Conversione Completa)")
-            # Rendering grafico per file HTML o visualizzazione semplice per Markdown
+            # Se il file è HTML, rendi l'anteprima grafica con st.components.v1.html
             if file_extension == "html":
-                st.markdown(converted_text, unsafe_allow_html=True)
+                st.components.v1.html(converted_text, height=500, scrolling=True)
             else:
                 st.write(converted_text)
             if st.button("📥 Scarica File Revisionato"):
-                st.download_button("Scarica Revisionato", converted_text.encode("utf-8"), "document_revised.html" if file_extension=="html" else "document_revised.txt", "text/html" if file_extension=="html" else "text/plain")
+                st.download_button("Scarica Revisionato", converted_text.encode("utf-8"),
+                                   "document_revised.html" if file_extension=="html" else "document_revised.txt",
+                                   "text/html" if file_extension=="html" else "text/plain")
         elif file_extension in ["doc", "docx"]:
             paragraphs = process_doc_file(uploaded_file)
             full_text = "\n".join(paragraphs)
@@ -277,7 +288,9 @@ if uploaded_file is not None:
                 new_doc.add_paragraph(converted_text)
                 buffer = io.BytesIO()
                 new_doc.save(buffer)
-                st.download_button("Scarica Documento Revisionato", buffer.getvalue(), "document_revised.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+                st.download_button("Scarica Documento Revisionato", buffer.getvalue(),
+                                   "document_revised.docx",
+                                   "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
         elif file_extension == "pdf":
             paragraphs = process_pdf_file(uploaded_file)
             full_text = "\n".join(paragraphs)
