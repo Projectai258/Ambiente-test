@@ -68,11 +68,11 @@ compiled_patterns = [re.compile(p, re.IGNORECASE) for p in CRITICAL_PATTERNS]
 # Opzioni di tono per la riscrittura
 ########################################
 TONE_OPTIONS = {
-    "Stile originale": "Mantieni lo stesso stile del testo originale, stessa struttura della frase.",
+    "Stile originale": "Mantieni lo stesso stile e struttura del testo originale.",
     "Formale": "Riscrivi in modo formale e professionale.",
-    "Informale": "Riscrivi in modo amichevole e colloquiale rivolto ad un lettore giovane.",
+    "Informale": "Riscrivi in modo amichevole e colloquiale.",
     "Tecnico": "Riscrivi con linguaggio tecnico e preciso.",
-    "Narrativo": "Riscrivi in stile descrittivo e coinvolgente direzionato ad un pubblico giovanile.",
+    "Narrativo": "Riscrivi in modo descrittivo e coinvolgente.",
     "Pubblicitario": "Riscrivi in modo persuasivo, come una pubblicità.",
     "Giornalistico": "Riscrivi in tono chiaro e informativo.",
 }
@@ -81,7 +81,7 @@ TONE_OPTIONS = {
 # Funzione per conversione da prima persona singolare a plurale
 ########################################
 def convert_first_singular_to_plural(text):
-    # Mappa delle sostituzioni: aggiungi altre regole se necessario
+    # Mappa delle sostituzioni: espandila secondo necessità.
     replacements = {
         r'\b[Ii]o\b': 'noi',
         r'\b[Mm]io\b': 'nostro',
@@ -230,13 +230,16 @@ def process_pdf_with_overlay(uploaded_file, modifications):
 ########################################
 # Selezione modalità e flag di conversione globale
 ########################################
-# Modalità di revisione (rimane la scelta per blocchi)
+# Le modalità sono state rinominate per essere più esplicative:
+# - "Riscrittura blocchi critici": revisiona solo i blocchi individuati tramite pattern.
+# - "Conversione completa in plurale": converte l'intero testo da prima persona singolare a plurale.
+# - "Blocchi critici + conversione completa": applica la revisione sui blocchi e converte l'intero testo in plurale.
 modalita = st.radio(
     "Modalità di revisione:",
-    ("Revisiona blocchi corrispondenti", "Conversione intera (solo)", "Revisiona blocchi e applica conversione globale")
+    ("Riscrittura blocchi critici", "Conversione completa in plurale", "Blocchi critici + conversione completa")
 )
-# Se la modalità scelta è "Revisiona blocchi e applica conversione globale", il flag sarà True
-global_conversion = modalita == "Revisiona blocchi e applica conversione globale"
+# Flag per applicare la conversione globale (su tutto il testo)
+global_conversion = modalita in ["Conversione completa in plurale", "Blocchi critici + conversione completa"]
 
 ########################################
 # Logica principale Streamlit
@@ -250,13 +253,13 @@ uploaded_file = st.file_uploader("📂 Seleziona un file (html, md, doc, docx, p
 if uploaded_file is not None:
     file_extension = uploaded_file.name.split('.')[-1].lower()
     
-    # Modalità "Conversione intera (solo)"
-    if modalita == "Conversione intera (solo)":
+    # Modalità "Conversione completa in plurale" (lavoro su tutto il testo)
+    if modalita == "Conversione completa in plurale":
         if file_extension in ["html", "md"]:
             file_content = uploaded_file.read().decode("utf-8")
             converted_text = convert_first_singular_to_plural(file_content)
-            st.subheader("📌 Testo Revisionato (Conversione Intera)")
-            # Anteprima grafica: rendering HTML o testo semplice
+            st.subheader("📌 Testo Revisionato (Conversione Completa)")
+            # Rendering grafico per file HTML o visualizzazione semplice per Markdown
             if file_extension == "html":
                 st.markdown(converted_text, unsafe_allow_html=True)
             else:
@@ -267,7 +270,7 @@ if uploaded_file is not None:
             paragraphs = process_doc_file(uploaded_file)
             full_text = "\n".join(paragraphs)
             converted_text = convert_first_singular_to_plural(full_text)
-            st.subheader("📌 Testo Revisionato (Conversione Intera)")
+            st.subheader("📌 Testo Revisionato (Conversione Completa)")
             st.write(converted_text)
             if st.button("📥 Scarica Documento Revisionato"):
                 new_doc = Document()
@@ -286,11 +289,11 @@ if uploaded_file is not None:
             pdf.multi_cell(0, 10, converted_text)
             buffer = io.BytesIO()
             pdf.output(buffer, 'F')
-            st.subheader("📌 PDF Revisionato (Conversione Intera)")
+            st.subheader("📌 PDF Revisionato (Conversione Completa)")
             if st.button("📥 Scarica PDF Revisionato"):
                 st.download_button("Scarica PDF Revisionato", buffer.getvalue(), "document_revised.pdf", "application/pdf")
     
-    # Modalità "Revisiona blocchi corrispondenti" oppure "Revisiona blocchi e applica conversione globale"
+    # Modalità "Riscrittura blocchi critici" oppure "Blocchi critici + conversione completa"
     else:
         modifications = {}
         # Dizionario per salvare le scelte dell'utente (azione e, se necessario, il tono)
@@ -318,7 +321,7 @@ if uploaded_file is not None:
                     progress_text.text(f"Elaborati {count} di {total} blocchi...")
                 
                 if st.button("✍️ Genera Documento Revisionato"):
-                    # Ora viene eseguita la chiamata all'API solo per i blocchi scelti
+                    # Ora vengono elaborate le scelte per i blocchi critici
                     for blocco, info in scelte_utente.items():
                         if info["azione"] == "Riscrivi":
                             prev_blocco, next_blocco = extract_context(blocchi, blocco)
@@ -328,13 +331,13 @@ if uploaded_file is not None:
                             modifications[blocco] = ""
                         else:  # Ignora
                             modifications[blocco] = blocco
-                    # Applica modifiche al contenuto HTML e, se attivo, conversione globale
+                    # Applica modifiche al contenuto HTML
                     final_content = process_html_content(html_content, modifications, highlight=True)
+                    # Se la modalità prevede la conversione completa, applicala sull'intero testo
                     if global_conversion:
                         final_content = convert_first_singular_to_plural(final_content)
                     st.success("✅ Revisione completata!")
                     st.subheader("🌍 Anteprima con Testo Revisionato")
-                    # Rendering grafico dell'HTML revisionato
                     st.components.v1.html(final_content, height=500, scrolling=True)
                     st.download_button("📥 Scarica HTML Revisionato", final_content.encode("utf-8"), "document_revised.html", "text/html")
             else:
