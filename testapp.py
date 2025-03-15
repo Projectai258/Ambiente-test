@@ -78,30 +78,33 @@ TONE_OPTIONS = {
 }
 
 ########################################
-# Funzione per conversione da prima persona singolare a plurale
+# Funzione AI per conversione da prima persona singolare a plurale
 ########################################
-def convert_first_singular_to_plural(text):
-    # Mappa delle sostituzioni per la conversione
-    replacements = {
-        "io": "noi",
-        "mio": "nostro",
-        "mia": "nostra",
-        "miei": "nostri",
-        "mie": "nostre",
-        "mi": "ci"
-    }
-    
-    def replacer(match):
-        word = match.group(0)
-        lower_word = word.lower()
-        replaced = replacements.get(lower_word, word)
-        # Mantieni la capitalizzazione se il primo carattere era maiuscolo
-        if word[0].isupper():
-            replaced = replaced.capitalize()
-        return replaced
-
-    pattern = re.compile(r'\b(io|mio|mia|miei|mie|mi)\b', re.IGNORECASE)
-    return pattern.sub(replacer, text)
+def ai_convert_first_singular_to_plural(text):
+    """
+    Usa l'AI per convertire il testo da prima persona singolare a plurale,
+    mantenendo inalterato il contenuto e il senso logico.
+    """
+    prompt = (
+        "Riscrivi il seguente testo modificando esclusivamente il modo di interloquire da prima persona singolare a prima persona plurale. "
+        "Mantieni invariato il contenuto e il senso logico.\n\n"
+        f"Testo originale:\n{text}"
+    )
+    try:
+        response = client.chat.completions.create(
+            model="google/gemini-2.0-pro-exp-02-05:free",
+            messages=[{"role": "system", "content": prompt}],
+            max_tokens=500
+        )
+        if response and hasattr(response, "choices") and response.choices:
+            return response.choices[0].message.content.strip()
+        error_message = "⚠️ Errore: Nessun testo valido restituito dall'API."
+        logger.error(error_message)
+        return error_message
+    except Exception as e:
+        error_message = f"⚠️ Errore nell'elaborazione: {e}"
+        logger.error(error_message)
+        return error_message
 
 ########################################
 # Funzioni di supporto comuni
@@ -241,7 +244,7 @@ def process_pdf_with_overlay(uploaded_file, modifications):
 ########################################
 # Le modalità sono state rinominate per essere più esplicative:
 # - "Riscrittura blocchi critici": revisiona solo i blocchi individuati tramite pattern.
-# - "Conversione completa in plurale": converte l'intero testo da prima persona singolare a plurale.
+# - "Conversione completa in plurale": converte l'intero testo da prima persona singolare a plurale usando AI.
 # - "Blocchi critici + conversione completa": applica la revisione sui blocchi e converte l'intero testo in plurale.
 modalita = st.radio(
     "Modalità di revisione:",
@@ -262,13 +265,12 @@ uploaded_file = st.file_uploader("📂 Seleziona un file (html, md, doc, docx, p
 if uploaded_file is not None:
     file_extension = uploaded_file.name.split('.')[-1].lower()
     
-    # Modalità "Conversione completa in plurale" (lavoro su tutto il testo)
+    # Modalità "Conversione completa in plurale" (lavoro su tutto il testo con AI)
     if modalita == "Conversione completa in plurale":
         if file_extension in ["html", "md"]:
             file_content = uploaded_file.read().decode("utf-8")
-            converted_text = convert_first_singular_to_plural(file_content)
-            st.subheader("📌 Testo Revisionato (Conversione Completa)")
-            # Se il file è HTML, rendi l'anteprima grafica con st.components.v1.html
+            converted_text = ai_convert_first_singular_to_plural(file_content)
+            st.subheader("📌 Testo Revisionato (Conversione Completa in Plurale)")
             if file_extension == "html":
                 st.components.v1.html(converted_text, height=500, scrolling=True)
             else:
@@ -280,8 +282,8 @@ if uploaded_file is not None:
         elif file_extension in ["doc", "docx"]:
             paragraphs = process_doc_file(uploaded_file)
             full_text = "\n".join(paragraphs)
-            converted_text = convert_first_singular_to_plural(full_text)
-            st.subheader("📌 Testo Revisionato (Conversione Completa)")
+            converted_text = ai_convert_first_singular_to_plural(full_text)
+            st.subheader("📌 Testo Revisionato (Conversione Completa in Plurale)")
             st.write(converted_text)
             if st.button("📥 Scarica Documento Revisionato"):
                 new_doc = Document()
@@ -294,7 +296,7 @@ if uploaded_file is not None:
         elif file_extension == "pdf":
             paragraphs = process_pdf_file(uploaded_file)
             full_text = "\n".join(paragraphs)
-            converted_text = convert_first_singular_to_plural(full_text)
+            converted_text = ai_convert_first_singular_to_plural(full_text)
             pdf = FPDF()
             pdf.add_page()
             pdf.set_auto_page_break(auto=True, margin=15)
@@ -302,7 +304,7 @@ if uploaded_file is not None:
             pdf.multi_cell(0, 10, converted_text)
             buffer = io.BytesIO()
             pdf.output(buffer, 'F')
-            st.subheader("📌 PDF Revisionato (Conversione Completa)")
+            st.subheader("📌 PDF Revisionato (Conversione Completa in Plurale)")
             if st.button("📥 Scarica PDF Revisionato"):
                 st.download_button("Scarica PDF Revisionato", buffer.getvalue(), "document_revised.pdf", "application/pdf")
     
@@ -346,9 +348,8 @@ if uploaded_file is not None:
                             modifications[blocco] = blocco
                     # Applica modifiche al contenuto HTML
                     final_content = process_html_content(html_content, modifications, highlight=True)
-                    # Se la modalità prevede la conversione completa, applicala sull'intero testo
                     if global_conversion:
-                        final_content = convert_first_singular_to_plural(final_content)
+                        final_content = ai_convert_first_singular_to_plural(final_content)
                     st.success("✅ Revisione completata!")
                     st.subheader("🌍 Anteprima con Testo Revisionato")
                     st.components.v1.html(final_content, height=500, scrolling=True)
@@ -389,7 +390,7 @@ if uploaded_file is not None:
                             modifications[paragrafo] = paragrafo
                     full_text = "\n".join([modifications.get(p, p) for p in paragrafi])
                     if global_conversion:
-                        full_text = convert_first_singular_to_plural(full_text)
+                        full_text = ai_convert_first_singular_to_plural(full_text)
                     new_doc = Document()
                     new_doc.add_paragraph(full_text)
                     buffer = io.BytesIO()
@@ -433,7 +434,7 @@ if uploaded_file is not None:
                             modifications[blocco] = blocco
                     if global_conversion:
                         for key in modifications:
-                            modifications[key] = convert_first_singular_to_plural(modifications[key])
+                            modifications[key] = ai_convert_first_singular_to_plural(modifications[key])
                     with st.spinner("🔄 Riscrittura in corso..."):
                         revised_pdf = process_pdf_with_overlay(uploaded_file, modifications)
                     st.success("✅ Revisione completata!")
