@@ -276,24 +276,26 @@ if uploaded_file is not None:
         if file_extension in ["html", "md"]:
             file_content = file_bytes.decode("utf-8")
             if file_extension == "html":
-                # Per file HTML, estrai il contenuto del <body>
                 soup = BeautifulSoup(file_content, "html.parser")
                 body = soup.body
-                original_body_text = body.get_text(separator="\n") if body else ""
+                original_body_text = body.get_text(separator="\n") if body else file_content
                 if st.button("Genera Anteprima Conversione Completa in Plurale"):
                     converted_text = ai_convert_first_singular_to_plural(original_body_text)
                     st.session_state.converted_text = converted_text
                 if "converted_text" in st.session_state:
                     st.subheader("📌 Testo Revisionato (Conversione Completa in Plurale)")
-                    # Usa la funzione per creare un HTML minimale
-                    minimal_html = convert_plain_text_to_minimal_html(st.session_state.converted_text)
-                    st.components.v1.html(minimal_html, height=500, scrolling=True)
+                    # Se il testo convertito contiene tag HTML, usalo così; altrimenti crealo come documento minimale
+                    if "<" in st.session_state.converted_text:
+                        final_html = st.session_state.converted_text
+                    else:
+                        final_html = convert_plain_text_to_minimal_html(st.session_state.converted_text)
+                    st.components.v1.html(final_html, height=500, scrolling=True)
                     st.download_button("📥 Scarica File Revisionato",
-                                       data=minimal_html.encode("utf-8"),
+                                       data=final_html.encode("utf-8"),
                                        file_name="document_revised.html",
                                        mime="text/html")
             else:
-                # Per file Markdown, applica la conversione direttamente
+                # Per Markdown
                 if st.button("Genera Anteprima Conversione Completa in Plurale"):
                     converted_text = ai_convert_first_singular_to_plural(file_content)
                     st.session_state.converted_text = converted_text
