@@ -17,12 +17,12 @@ from fpdf import FPDF
 load_dotenv()
 
 ########################################
-# 2) PRIMO comando Streamlit
+# 2) Configurazione Streamlit
 ########################################
 st.set_page_config(page_title="Revisione Documenti", layout="wide")
 
 ########################################
-# 3) Configurazione logging e altre impostazioni Python
+# 3) Configurazione logging
 ########################################
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -39,7 +39,7 @@ if not API_KEY:
 client = openai.OpenAI(api_key=API_KEY, base_url="https://openrouter.ai/api/v1")
 
 ########################################
-# Definizione dei pattern critici
+# Pattern critici per la revisione (esempio)
 ########################################
 CRITICAL_PATTERNS = [
     r"\bIlias Contreas\b",
@@ -65,7 +65,7 @@ CRITICAL_PATTERNS = [
 compiled_patterns = [re.compile(p, re.IGNORECASE) for p in CRITICAL_PATTERNS]
 
 ########################################
-# Opzioni di tono per la riscrittura
+# Opzioni di tono per la riscrittura (per blocchi)
 ########################################
 TONE_OPTIONS = {
     "Stile originale": "Mantieni lo stesso stile e struttura del testo originale.",
@@ -236,8 +236,12 @@ def process_pdf_with_overlay(uploaded_file, modifications):
     return output.getvalue()
 
 ########################################
-# Selezione modalità e flag di conversione globale
+# Modalità di revisione
 ########################################
+# Modalità:
+# - "Riscrittura blocchi critici": revisiona solo i blocchi individuati tramite pattern.
+# - "Conversione completa in plurale": converte l'intero testo da prima persona singolare a plurale usando AI.
+# - "Blocchi critici + conversione completa": applica la revisione sui blocchi e converte l'intero testo in plurale.
 modalita = st.radio(
     "Modalità di revisione:",
     ("Riscrittura blocchi critici", "Conversione completa in plurale", "Blocchi critici + conversione completa")
@@ -247,27 +251,28 @@ global_conversion = modalita in ["Conversione completa in plurale", "Blocchi cri
 ########################################
 # Logica principale Streamlit
 ########################################
-
 st.title("📄 Revisione Documenti")
 st.write("Carica un file (HTML, Markdown, Word o PDF) e scegli come intervenire sul testo.")
 
 uploaded_file = st.file_uploader("📂 Seleziona un file (html, md, doc, docx, pdf)", type=["html", "md", "doc", "docx", "pdf"])
 
 if uploaded_file is not None:
-    # Leggi il file una sola volta e salva i byte
+    # Leggi il file una sola volta
     file_bytes = uploaded_file.read()
     # Riposiziona il puntatore se necessario
     uploaded_file.seek(0)
     file_extension = uploaded_file.name.split('.')[-1].lower()
     
-    # Modalità "Conversione completa in plurale" (lavoro su tutto il testo con AI)
+    # Modalità "Conversione completa in plurale" (AI su tutto il testo)
     if modalita == "Conversione completa in plurale":
         if file_extension in ["html", "md"]:
-            # Per file testuali, decodifica i byte
             file_content = file_bytes.decode("utf-8")
             converted_text = ai_convert_first_singular_to_plural(file_content)
             st.subheader("📌 Testo Revisionato (Conversione Completa in Plurale)")
             if file_extension == "html":
+                # Aggiungi wrapper se necessario per forzare il rendering grafico
+                if "<html" not in converted_text.lower():
+                    converted_text = f"<html><body>{converted_text}</body></html>"
                 st.components.v1.html(converted_text, height=500, scrolling=True)
             else:
                 st.write(converted_text)
@@ -390,7 +395,9 @@ if uploaded_file is not None:
                     new_doc.save(buffer)
                     st.success("✅ Revisione completata!")
                     st.subheader("🌍 Anteprima Testo (Word)")
-                    st.download_button("📥 Scarica Documento Word Revisionato", buffer.getvalue(), "document_revised.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+                    st.download_button("📥 Scarica Documento Word Revisionato", buffer.getvalue(),
+                                       "document_revised.docx",
+                                       "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
             else:
                 st.info("Non sono state trovate corrispondenze per i criteri di ricerca nel documento Word.")
         
