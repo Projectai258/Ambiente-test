@@ -100,16 +100,15 @@ def ai_convert_first_singular_to_plural(text):
         return ""
 
 ########################################
-# Funzione per creare un documento HTML minimale
+# Funzione per convertire plain text in HTML minimale
 ########################################
-def create_minimal_html(converted_text):
-    # Suddivide il testo convertito per newline e crea un <p> per ogni riga non vuota
-    paragraphs = "".join(f"<p>{line.strip()}</p>" for line in converted_text.splitlines() if line.strip())
+def convert_plain_text_to_minimal_html(text):
+    paragraphs = "".join(f"<p>{line.strip()}</p>" for line in text.splitlines() if line.strip())
     minimal_html = f"""<!DOCTYPE html>
 <html lang="it">
 <head>
-<meta charset="utf-8">
-<title>Documento Revisionato</title>
+  <meta charset="utf-8">
+  <title>Documento Revisionato</title>
 </head>
 <body>
 {paragraphs}
@@ -118,13 +117,9 @@ def create_minimal_html(converted_text):
     return minimal_html
 
 ########################################
-# Funzione per "wrap" del testo convertito in HTML usando il documento originale
+# Funzione per "wrap" del testo convertito usando il documento originale
 ########################################
 def wrap_converted_text(original_html, converted_text):
-    """
-    Mantiene il <head> originale e crea un nuovo <body> formattato
-    con paragrafi per il testo convertito.
-    """
     soup = BeautifulSoup(original_html, "html.parser")
     head = soup.head
     new_body = soup.new_tag("body")
@@ -140,7 +135,7 @@ def wrap_converted_text(original_html, converted_text):
     return str(soup)
 
 ########################################
-# Funzioni di supporto
+# Funzioni di supporto per blocchi e revisioni
 ########################################
 def extract_context(blocks, selected_block):
     try:
@@ -281,28 +276,24 @@ if uploaded_file is not None:
         if file_extension in ["html", "md"]:
             file_content = file_bytes.decode("utf-8")
             if file_extension == "html":
-                # Per i file HTML, estrai il tag <head> e il contenuto del <body>
+                # Per file HTML, estrai il contenuto del <body>
                 soup = BeautifulSoup(file_content, "html.parser")
-                head = soup.head
-                if not head:
-                    st.error("Il file HTML non contiene un tag <head>.")
-                else:
-                    body = soup.body
-                    original_body_text = body.get_text(separator="\n") if body else ""
-                    if st.button("Genera Anteprima Conversione Completa in Plurale"):
-                        converted_text = ai_convert_first_singular_to_plural(original_body_text)
-                        st.session_state.converted_text = converted_text
-                    if "converted_text" in st.session_state:
-                        st.subheader("📌 Testo Revisionato (Conversione Completa in Plurale)")
-                        # Invece di reinserire nel documento originale, creiamo un HTML minimale
-                        minimal_html = create_minimal_html(st.session_state.converted_text)
-                        st.components.v1.html(minimal_html, height=500, scrolling=True)
-                        st.download_button("📥 Scarica File Revisionato",
-                                           data=minimal_html.encode("utf-8"),
-                                           file_name="document_revised.html",
-                                           mime="text/html")
+                body = soup.body
+                original_body_text = body.get_text(separator="\n") if body else ""
+                if st.button("Genera Anteprima Conversione Completa in Plurale"):
+                    converted_text = ai_convert_first_singular_to_plural(original_body_text)
+                    st.session_state.converted_text = converted_text
+                if "converted_text" in st.session_state:
+                    st.subheader("📌 Testo Revisionato (Conversione Completa in Plurale)")
+                    # Usa la funzione per creare un HTML minimale
+                    minimal_html = convert_plain_text_to_minimal_html(st.session_state.converted_text)
+                    st.components.v1.html(minimal_html, height=500, scrolling=True)
+                    st.download_button("📥 Scarica File Revisionato",
+                                       data=minimal_html.encode("utf-8"),
+                                       file_name="document_revised.html",
+                                       mime="text/html")
             else:
-                # Per Markdown, applica la conversione direttamente
+                # Per file Markdown, applica la conversione direttamente
                 if st.button("Genera Anteprima Conversione Completa in Plurale"):
                     converted_text = ai_convert_first_singular_to_plural(file_content)
                     st.session_state.converted_text = converted_text
