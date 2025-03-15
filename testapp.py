@@ -240,22 +240,43 @@ if uploaded_file is not None:
     if modalita == "Conversione completa in plurale":
         if file_extension in ["html", "md"]:
             file_content = file_bytes.decode("utf-8")
-            if st.button("Genera Anteprima Conversione Completa in Plurale"):
-                converted_text = ai_convert_first_singular_to_plural(file_content)
-                st.session_state.converted_text = converted_text
-            if "converted_text" in st.session_state:
-                st.subheader("📌 Testo Revisionato (Conversione Completa in Plurale)")
-                converted_text = st.session_state.converted_text
-                if file_extension == "html":
-                    if "<html" not in converted_text.lower():
-                        converted_text = f"<html><body>{converted_text}</body></html>"
-                    st.components.v1.html(converted_text, height=500, scrolling=True)
+            if file_extension == "html":
+                # Per i file HTML, estrai il contenuto del <body>
+                soup = BeautifulSoup(file_content, "html.parser")
+                body = soup.body
+                if body:
+                    original_body_text = body.get_text(separator="\n")
+                    if st.button("Genera Anteprima Conversione Completa in Plurale"):
+                        converted_body_text = ai_convert_first_singular_to_plural(original_body_text)
+                        st.session_state.converted_text = converted_body_text
+                    if "converted_text" in st.session_state:
+                        st.subheader("📌 Testo Revisionato (Conversione Completa in Plurale)")
+                        # Crea un nuovo <body> con il testo convertito
+                        new_body = soup.new_tag("body")
+                        new_paragraph = soup.new_tag("p")
+                        new_paragraph.string = st.session_state.converted_text
+                        new_body.append(new_paragraph)
+                        soup.body.replace_with(new_body)
+                        final_html = str(soup)
+                        st.components.v1.html(final_html, height=500, scrolling=True)
+                        st.download_button("📥 Scarica File Revisionato",
+                                           data=final_html.encode("utf-8"),
+                                           file_name="document_revised.html",
+                                           mime="text/html")
                 else:
-                    st.write(converted_text)
-                st.download_button("📥 Scarica File Revisionato",
-                                   data=converted_text.encode("utf-8"),
-                                   file_name="document_revised.html" if file_extension=="html" else "document_revised.txt",
-                                   mime="text/html" if file_extension=="html" else "text/plain")
+                    st.error("Il file HTML non contiene un tag <body>.")
+            else:
+                # Per i file Markdown, applica la conversione direttamente
+                if st.button("Genera Anteprima Conversione Completa in Plurale"):
+                    converted_text = ai_convert_first_singular_to_plural(file_content)
+                    st.session_state.converted_text = converted_text
+                if "converted_text" in st.session_state:
+                    st.subheader("📌 Testo Revisionato (Conversione Completa in Plurale)")
+                    st.write(st.session_state.converted_text)
+                    st.download_button("📥 Scarica File Revisionato",
+                                       data=st.session_state.converted_text.encode("utf-8"),
+                                       file_name="document_revised.txt",
+                                       mime="text/plain")
         elif file_extension in ["doc", "docx"]:
             paragraphs = process_doc_file(io.BytesIO(file_bytes))
             full_text = "\n".join(paragraphs)
