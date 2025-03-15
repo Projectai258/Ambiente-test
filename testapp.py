@@ -100,6 +100,30 @@ def ai_convert_first_singular_to_plural(text):
         return ""
 
 ########################################
+# Funzione per "wrap" del testo convertito in HTML
+########################################
+def wrap_converted_text(original_html, converted_text):
+    """
+    Estrae il tag <head> dall'HTML originale e crea un nuovo <body>
+    in cui ogni riga (o blocco separato da newline) del testo convertito
+    diventa un paragrafo (<p>).
+    """
+    soup = BeautifulSoup(original_html, "html.parser")
+    head = soup.head
+    new_body = soup.new_tag("body")
+    for line in converted_text.split("\n"):
+        if line.strip():
+            p = soup.new_tag("p")
+            p.string = line.strip()
+            new_body.append(p)
+    # Se c'era già un body, sostituiscilo, altrimenti aggiungi il nuovo body
+    if soup.body:
+        soup.body.replace_with(new_body)
+    else:
+        soup.append(new_body)
+    return str(soup)
+
+########################################
 # Funzioni di supporto
 ########################################
 def extract_context(blocks, selected_block):
@@ -241,32 +265,31 @@ if uploaded_file is not None:
         if file_extension in ["html", "md"]:
             file_content = file_bytes.decode("utf-8")
             if file_extension == "html":
-                # Per i file HTML, estrai il contenuto del <body>
+                # Per file HTML, estrai il tag <head> e il contenuto del <body>
                 soup = BeautifulSoup(file_content, "html.parser")
-                body = soup.body
-                if body:
-                    original_body_text = body.get_text(separator="\n")
+                head = soup.head
+                if not head:
+                    st.error("Il file HTML non contiene un tag <head>.")
+                else:
+                    body = soup.body
+                    if body:
+                        original_body_text = body.get_text(separator="\n")
+                    else:
+                        original_body_text = ""
                     if st.button("Genera Anteprima Conversione Completa in Plurale"):
-                        converted_body_text = ai_convert_first_singular_to_plural(original_body_text)
-                        st.session_state.converted_text = converted_body_text
+                        converted_text = ai_convert_first_singular_to_plural(original_body_text)
+                        st.session_state.converted_text = converted_text
                     if "converted_text" in st.session_state:
                         st.subheader("📌 Testo Revisionato (Conversione Completa in Plurale)")
-                        # Crea un nuovo <body> con il testo convertito
-                        new_body = soup.new_tag("body")
-                        new_paragraph = soup.new_tag("p")
-                        new_paragraph.string = st.session_state.converted_text
-                        new_body.append(new_paragraph)
-                        soup.body.replace_with(new_body)
-                        final_html = str(soup)
+                        # Ricrea un nuovo body con il testo convertito, suddividendo per newline
+                        final_html = wrap_converted_text(file_content, st.session_state.converted_text)
                         st.components.v1.html(final_html, height=500, scrolling=True)
                         st.download_button("📥 Scarica File Revisionato",
                                            data=final_html.encode("utf-8"),
                                            file_name="document_revised.html",
                                            mime="text/html")
-                else:
-                    st.error("Il file HTML non contiene un tag <body>.")
             else:
-                # Per i file Markdown, applica la conversione direttamente
+                # Per Markdown, applica la conversione direttamente
                 if st.button("Genera Anteprima Conversione Completa in Plurale"):
                     converted_text = ai_convert_first_singular_to_plural(file_content)
                     st.session_state.converted_text = converted_text
