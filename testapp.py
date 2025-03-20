@@ -10,7 +10,7 @@ import markdown
 from docx import Document
 from PyPDF2 import PdfReader
 from fpdf import FPDF
-from pydantic import BaseSettings
+from pydantic import BaseModel
 
 # Configurazione iniziale
 ########################################
@@ -18,13 +18,13 @@ from pydantic import BaseSettings
 # 1) Carica variabili d'ambiente
 load_dotenv()
 
-class Settings(BaseSettings):
+class Settings(BaseModel):
     OPENROUTER_API_KEY: str
 
     class Config:
         env_file = ".env"
 
-settings = Settings()
+settings = Settings(OPENROUTER_API_KEY=os.getenv("OPENROUTER_API_KEY"))
 
 # 2) Configurazione Streamlit
 st.set_page_config(
