@@ -10,7 +10,7 @@ import markdown
 from docx import Document
 from PyPDF2 import PdfReader
 from fpdf import FPDF
-from pydantic_settings import BaseSettings
+from pydantic import BaseModel
 
 # Configurazione iniziale
 ########################################
@@ -18,13 +18,11 @@ from pydantic_settings import BaseSettings
 # 1) Carica variabili d'ambiente
 load_dotenv()
 
-class Settings(BaseSettings):
+class Settings(BaseModel):
     OPENROUTER_API_KEY: str
 
-    class Config:
-        env_file = ".env"
-
-settings = Settings()
+# Carica le variabili d'ambiente
+settings = Settings(OPENROUTER_API_KEY=os.getenv("OPENROUTER_API_KEY"))
 
 # 2) Configurazione Streamlit
 st.set_page_config(
@@ -58,9 +56,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # 4) Recupera la chiave API
-API_KEY = os.getenv("OPENROUTER_API_KEY") or st.secrets.get("OPENROUTER_API_KEY")
+API_KEY = settings.OPENROUTER_API_KEY
 if not API_KEY:
-    st.error("⚠️ Errore: API Key di OpenRouter non trovata! Impostala come variabile d'ambiente o in st.secrets.")
+    st.error("⚠️ Errore: API Key di OpenRouter non trovata! Impostala come variabile d'ambiente.")
     st.stop()
 
 # Verifica la validità della chiave API
