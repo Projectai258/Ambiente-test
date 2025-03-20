@@ -32,22 +32,7 @@ class Settings(BaseModel):
 # Carica le variabili d'ambiente
 settings = Settings(OPENROUTER_API_KEY=os.getenv("OPENROUTER_API_KEY"))
 
-# 3) Selettore per il tema
-theme = st.sidebar.selectbox("Seleziona un tema", ["Light", "Dark"])
-if theme == "Dark":
-    st.markdown(
-        """
-        <style>
-        .stApp {
-            background-color: #1E1E1E;
-            color: #FFFFFF;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
-
-# 4) Configurazione logging
+# 3) Configurazione logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
@@ -55,7 +40,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# 5) Recupera la chiave API
+# 4) Recupera la chiave API
 API_KEY = settings.OPENROUTER_API_KEY
 if not API_KEY:
     st.error("⚠️ Errore: API Key di OpenRouter non trovata! Impostala come variabile d'ambiente.")
@@ -226,71 +211,154 @@ if uploaded_file is not None:
         st.error(f"Errore durante la lettura del file: {e}")
         st.stop()
 
-    if st.button("Avvia elaborazione"):
-        with st.spinner("Elaborazione in corso..."):
-            if modalita == "Conversione completa in plurale":
-                if file_extension in ["html", "md"]:
-                    file_content = file_bytes.decode("utf-8")
-                    if file_extension == "html":
-                        soup = BeautifulSoup(file_content, "html.parser")
-                        body = soup.body
-                        original_body_text = body.get_text(separator="\n") if body else file_content
-                    else:
-                        original_body_text = file_content
+    if modalita == "Conversione completa in plurale":
+        if file_extension in ["html", "md"]:
+            file_content = file_bytes.decode("utf-8")
+            if file_extension == "html":
+                soup = BeautifulSoup(file_content, "html.parser")
+                body = soup.body
+                original_body_text = body.get_text(separator="\n") if body else file_content
+            else:
+                original_body_text = file_content
 
-                    converted_text = ai_convert_first_singular_to_plural(original_body_text)
-                    st.session_state.converted_text = converted_text
+            if st.button("Genera Anteprima Conversione Completa in Plurale"):
+                converted_text = ai_convert_first_singular_to_plural(original_body_text)
+                st.session_state.converted_text = converted_text
 
-                    if "converted_text" in st.session_state:
-                        st.subheader("📌 Testo Revisionato (Conversione Completa in Plurale)")
-                        if "<" in st.session_state.converted_text:
-                            final_html = st.session_state.converted_text
+            if "converted_text" in st.session_state:
+                st.subheader("📌 Testo Revisionato (Conversione Completa in Plurale)")
+                if "<" in st.session_state.converted_text:
+                    final_html = st.session_state.converted_text
+                else:
+                    final_html = convert_plain_text_to_minimal_html(st.session_state.converted_text)
+                st.components.v1.html(final_html, height=500, scrolling=True)
+                st.download_button(
+                    "📥 Scarica File Revisionato",
+                    data=final_html.encode("utf-8"),
+                    file_name="document_revised.html",
+                    mime="text/html"
+                )
+        elif file_extension in ["doc", "docx"]:
+            paragraphs = process_doc_file(io.BytesIO(file_bytes))
+            full_text = "\n".join(paragraphs)
+            if st.button("Genera Anteprima Conversione Completa in Plurale"):
+                converted_text = ai_convert_first_singular_to_plural(full_text)
+                st.session_state.converted_text = converted_text
+
+            if "converted_text" in st.session_state:
+                st.subheader("📌 Testo Revisionato (Conversione Completa in Plurale)")
+                st.write(st.session_state.converted_text)
+                new_doc = Document()
+                new_doc.add_paragraph(st.session_state.converted_text)
+                buffer = io.BytesIO()
+                new_doc.save(buffer)
+                st.download_button(
+                    "📥 Scarica Documento Revisionato",
+                    data=buffer.getvalue(),
+                    file_name="document_revised.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                )
+        elif file_extension == "pdf":
+            paragraphs = process_pdf_file(io.BytesIO(file_bytes))
+            full_text = "\n".join(paragraphs)
+            if st.button("Genera Anteprima Conversione Completa in Plurale"):
+                converted_text = ai_convert_first_singular_to_plural(full_text)
+                st.session_state.converted_text = converted_text
+
+            if "converted_text" in st.session_state:
+                st.subheader("📌 PDF Revisionato (Conversione Completa in Plurale)")
+                pdf = FPDF()
+                pdf.add_page()
+                pdf.set_auto_page_break(auto=True, margin=15)
+                pdf.set_font("Arial", size=12)
+                pdf.multi_cell(0, 10, st.session_state.converted_text)
+                buffer = io.BytesIO()
+                pdf.output(buffer, 'F')
+                st.download_button(
+                    "📥 Scarica PDF Revisionato",
+                    data=buffer.getvalue(),
+                    file_name="document_revised.pdf",
+                    mime="application/pdf"
+                )
+    else:
+        modifications = {}
+        scelte_utente = {}
+
+        if file_extension in ["html", "md"]:
+            file_content = file_bytes.decode("utf-8")
+            blocchi, html_content = process_file_content(file_content, file_extension)
+            blocchi_da_revisionare = filtra_blocchi(blocchi)
+            if blocchi_da_revisionare:
+                st.subheader("📌 Blocchi da revisionare")
+                progress_text = st.empty()
+                progress_bar = st.progress(0)
+                total = len(blocchi_da_revisionare)
+                count = 0
+                for uid, blocco in blocchi_da_revisionare.items():
+                    st.markdown(f"**{blocco}**")
+                    azione = st.radio("Azione per questo blocco:", ["Riscrivi", "Elimina", "Ignora"], key=f"action_{uid}")
+                    tono = None
+                    if azione == "Riscrivi":
+                        tono = st.selectbox("Scegli il tono:", list(TONE_OPTIONS.keys()), key=f"tone_{uid}")
+                    scelte_utente[blocco] = {"azione": azione, "tono": tono}
+                    count += 1
+                    progress_bar.progress(count / total)
+                    progress_text.text(f"Elaborati {count} di {total} blocchi...")
+
+                if st.button("✍️ Genera Documento Revisionato"):
+                    for blocco, info in scelte_utente.items():
+                        if info["azione"] == "Riscrivi":
+                            prev_blocco, next_blocco = extract_context(blocchi, blocco)
+                            mod_blocco = ai_rewrite_text(blocco, prev_blocco, next_blocco, info["tono"])
+                            modifications[blocco] = mod_blocco
+                        elif info["azione"] == "Elimina":
+                            modifications[blocco] = ""
                         else:
-                            final_html = convert_plain_text_to_minimal_html(st.session_state.converted_text)
-                        st.components.v1.html(final_html, height=500, scrolling=True)
-                        st.download_button(
-                            "📥 Scarica File Revisionato",
-                            data=final_html.encode("utf-8"),
-                            file_name="document_revised.html",
-                            mime="text/html"
-                        )
-                elif file_extension in ["doc", "docx"]:
-                    paragraphs = process_doc_file(io.BytesIO(file_bytes))
-                    full_text = "\n".join(paragraphs)
-                    converted_text = ai_convert_first_singular_to_plural(full_text)
-                    st.session_state.converted_text = converted_text
+                            modifications[blocco] = blocco
+                    final_content = process_html_content(html_content, modifications, highlight=True)
+                    if global_conversion:
+                        final_content = ai_convert_first_singular_to_plural(final_content)
+                    st.success("✅ Revisione completata!")
+                    st.subheader("🌍 Anteprima con Testo Revisionato")
+                    st.components.v1.html(final_content, height=500, scrolling=True)
+                    st.download_button(
+                        "📥 Scarica HTML Revisionato",
+                        data=final_content.encode("utf-8"),
+                        file_name="document_revised.html",
+                        mime="text/html"
+                    )
+            else:
+                st.info("Non sono state trovate corrispondenze per i criteri di ricerca nel testo.")
+        elif file_extension in ["doc", "docx"]:
+            paragraphs = process_doc_file(io.BytesIO(file_bytes))
+            blocchi_da_revisionare = filtra_blocchi(paragraphs)
+            if blocchi_da_revisionare:
+                st.subheader("📌 Paragrafi da revisionare")
+                progress_text = st.empty()
+                progress_bar = st.progress(0)
+                total = len(blocchi_da_revisionare)
+                count = 0
+                for uid, paragrafo in blocchi_da_revisionare.items():
+                    st.markdown(f"**{paragrafo}**")
+                    azione = st.radio("Azione per questo paragrafo:", ["Riscrivi", "Elimina", "Ignora"], key=f"action_{uid}")
+                    tono = None
+                    if azione == "Riscrivi":
+                        tono = st.selectbox("Scegli il tono:", list(TONE_OPTIONS.keys()), key=f"tone_{uid}")
+                    scelte_utente[paragrafo] = {"azione": azione, "tono": tono}
+                    count += 1
+                    progress_bar.progress(count / total)
+                    progress_text.text(f"Elaborati {count} di {total} paragrafi...")
 
-                    if "converted_text" in st.session_state:
-                        st.subheader("📌 Testo Revisionato (Conversione Completa in Plurale)")
-                        st.write(st.session_state.converted_text)
-                        new_doc = Document()
-                        new_doc.add_paragraph(st.session_state.converted_text)
-                        buffer = io.BytesIO()
-                        new_doc.save(buffer)
-                        st.download_button(
-                            "📥 Scarica Documento Revisionato",
-                            data=buffer.getvalue(),
-                            file_name="document_revised.docx",
-                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                        )
-                elif file_extension == "pdf":
-                    paragraphs = process_pdf_file(io.BytesIO(file_bytes))
-                    full_text = "\n".join(paragraphs)
-                    converted_text = ai_convert_first_singular_to_plural(full_text)
-                    st.session_state.converted_text = converted_text
-
-                    if "converted_text" in st.session_state:
-                        st.subheader("📌 PDF Revisionato (Conversione Completa in Plurale)")
-                        pdf = FPDF()
-                        pdf.add_page()
-                        pdf.set_auto_page_break(auto=True, margin=15)
-                        pdf.set_font("Arial", size=12)
-                        pdf.multi_cell(0, 10, st.session_state.converted_text)
-                        buffer = io.BytesIO()
-                        pdf.output(buffer, 'F')
-                        st.download_button(
-                            "📥 Scarica PDF Revisionato",
-                            data=buffer.getvalue(),
-                            file_name="document_revised.pdf",
-                            mime="application/pdf"
-                        )
+                if st.button("✍️ Genera Documento Revisionato"):
+                    modifications = {}
+                    for paragrafo, info in scelte_utente.items():
+                        if info["azione"] == "Riscrivi":
+                            prev_par, next_par = extract_context(paragraphs, paragrafo)
+                            mod_par = ai_rewrite_text(paragrafo, prev_par, next_par, info["tono"])
+                            modifications[paragrafo] = mod_par
+                        elif info["azione"] == "Elimina":
+                            modifications[paragrafo] = ""
+                        else:
+                            modifications[paragrafo] = paragrafo
+                    full_text = "\n".join([modifications.get(p, p) for p in paragraphs])
+                    if global_conversion
