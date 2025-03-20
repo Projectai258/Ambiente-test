@@ -361,4 +361,64 @@ if uploaded_file is not None:
                         else:
                             modifications[paragrafo] = paragrafo
                     full_text = "\n".join([modifications.get(p, p) for p in paragraphs])
-                    if global_conversion
+                    if global_conversion:
+                        full_text = ai_convert_first_singular_to_plural(full_text)
+                    new_doc = Document()
+                    new_doc.add_paragraph(full_text)
+                    buffer = io.BytesIO()
+                    new_doc.save(buffer)
+                    st.success("✅ Revisione completata!")
+                    st.subheader("🌍 Anteprima Testo (Word)")
+                    st.download_button(
+                        "📥 Scarica Documento Word Revisionato",
+                        data=buffer.getvalue(),
+                        file_name="document_revised.docx",
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    )
+            else:
+                st.info("Non sono state trovate corrispondenze per i criteri di ricerca nel documento Word.")
+        elif file_extension == "pdf":
+            paragraphs = process_pdf_file(io.BytesIO(file_bytes))
+            blocchi_da_revisionare = filtra_blocchi(paragraphs)
+            if blocchi_da_revisionare:
+                st.subheader("📌 Blocchi di testo da revisionare (PDF)")
+                progress_text = st.empty()
+                progress_bar = st.progress(0)
+                total = len(blocchi_da_revisionare)
+                count = 0
+                for uid, blocco in blocchi_da_revisionare.items():
+                    st.markdown(f"**{blocco}**")
+                    azione = st.radio("Azione per questo blocco:", ["Riscrivi", "Elimina", "Ignora"], key=f"action_{uid}")
+                    tono = None
+                    if azione == "Riscrivi":
+                        tono = st.selectbox("Scegli il tono:", list(TONE_OPTIONS.keys()), key=f"tone_{uid}")
+                    scelte_utente[blocco] = {"azione": azione, "tono": tono}
+                    count += 1
+                    progress_bar.progress(count / total)
+                    progress_text.text(f"Elaborati {count} di {total} blocchi...")
+
+                if st.button("✍️ Genera PDF Revisionato"):
+                    modifications = {}
+                    for blocco, info in scelte_utente.items():
+                        if info["azione"] == "Riscrivi":
+                            prev_blocco, next_blocco = extract_context(paragraphs, blocco)
+                            mod_blocco = ai_rewrite_text(blocco, prev_blocco, next_blocco, info["tono"])
+                            modifications[blocco] = mod_blocco
+                        elif info["azione"] == "Elimina":
+                            modifications[blocco] = ""
+                        else:
+                            modifications[blocco] = blocco
+                    if global_conversion:
+                        for key in modifications:
+                            modifications[key] = ai_convert_first_singular_to_plural(modifications[key])
+                    with st.spinner("🔄 Riscrittura in corso..."):
+                        revised_pdf = process_pdf_with_overlay(io.BytesIO(file_bytes), modifications)
+                    st.success("✅ Revisione completata!")
+                    st.download_button(
+                        "📥 Scarica PDF Revisionato",
+                        data=revised_pdf,
+                        file_name="document_revised.pdf",
+                        mime="application/pdf"
+                    )
+            else:
+                st.info("Non sono state trovate corrispondenze per i criteri di ricerca nel documento PDF.")
