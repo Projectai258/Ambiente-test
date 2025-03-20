@@ -120,12 +120,7 @@ TONE_OPTIONS = {
 # Funzione AI per conversione in plurale
 ########################################
 def ai_convert_first_singular_to_plural(text):
-    prompt = (
-        "Riscrivi il seguente testo modificando esclusivamente il modo di interloquire da prima persona singolare a prima persona plurale. "
-        "Mantieni invariato il contenuto e il senso logico.\n\n"
-        f"Testo originale:\n{text}"
-    )
-      if not text.strip():
+          if not text.strip():
         return ""
     try:
         response = client.chat.completions.create(
@@ -138,7 +133,11 @@ def ai_convert_first_singular_to_plural(text):
     except Exception as e:
         logger.error(f"⚠️ Errore nell'elaborazione: {e}")
         return ""
-
+prompt = (
+        "Riscrivi il seguente testo modificando esclusivamente il modo di interloquire da prima persona singolare a prima persona plurale. "
+        "Mantieni invariato il contenuto e il senso logico.\n\n"
+        f"Testo originale:\n{text}"
+    )
 ########################################
 # Funzione per convertire plain text in HTML minimale
 ########################################
