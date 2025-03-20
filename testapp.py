@@ -119,25 +119,37 @@ TONE_OPTIONS = {
 ########################################
 # Funzione AI per conversione in plurale
 ########################################
+# Funzione AI per conversione in plurale
+########################################
 def ai_convert_first_singular_to_plural(text):
-          if not text.strip():
+    # Verifica se il testo è vuoto
+    if not text.strip():
         return ""
+
+    # Definisci il prompt per la richiesta API
+    prompt = (
+        "Riscrivi il seguente testo modificando esclusivamente il modo di interloquire da prima persona singolare a prima persona plurale. "
+        "Mantieni invariato il contenuto e il senso logico.\n\n"
+        f"Testo originale:\n{text}"
+    )
+
     try:
+        # Invia la richiesta all'API
         response = client.chat.completions.create(
             model="google/gemini-2.0-pro-exp-02-05:free",
             messages=[{"role": "system", "content": prompt}],
             max_tokens=500,
             timeout=10  # Timeout di 10 secondi
         )
-        return response.choices[0].message.content.strip()
+        # Restituisci il testo riscritto
+        if response and hasattr(response, "choices") and response.choices:
+            return response.choices[0].message.content.strip()
+        else:
+            logger.error("⚠️ Errore: Nessun testo valido restituito dall'API.")
+            return ""
     except Exception as e:
         logger.error(f"⚠️ Errore nell'elaborazione: {e}")
         return ""
-prompt = (
-        "Riscrivi il seguente testo modificando esclusivamente il modo di interloquire da prima persona singolare a prima persona plurale. "
-        "Mantieni invariato il contenuto e il senso logico.\n\n"
-        f"Testo originale:\n{text}"
-    )
 ########################################
 # Funzione per convertire plain text in HTML minimale
 ########################################
