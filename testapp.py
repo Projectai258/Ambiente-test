@@ -10,21 +10,51 @@ import markdown
 from docx import Document
 from PyPDF2 import PdfReader
 from fpdf import FPDF
+from pydantic import BaseSettings
+
 
 ########################################
 # 1) Carica variabili d'ambiente
 ########################################
 load_dotenv()
+class Settings(BaseSettings):
+    OPENROUTER_API_KEY: str
 
+    class Config:
+        env_file = ".env"
+
+settings = Settings()
 ########################################
 # 2) Configurazione Streamlit
 ########################################
-st.set_page_config(page_title="Revisione Documenti", layout="wide")
-
+st.set_page_config(
+    page_title="Revisione Documenti",
+    layout="wide",
+    initial_sidebar_state="expanded",
+    page_icon="📄"
+)
+# Aggiungi un selettore per il tema
+theme = st.sidebar.selectbox("Seleziona un tema", ["Light", "Dark"])
+if theme == "Dark":
+    st.markdown(
+        """
+        <style>
+        .stApp {
+            background-color: #1E1E1E;
+            color: #FFFFFF;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
 ########################################
 # 3) Configurazione logging
 ########################################
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[logging.FileHandler("app.log"), logging.StreamHandler()]
+)
 logger = logging.getLogger(__name__)
 
 ########################################
@@ -34,6 +64,16 @@ API_KEY = os.getenv("OPENROUTER_API_KEY") or st.secrets.get("OPENROUTER_API_KEY"
 if not API_KEY:
     st.error("⚠️ Errore: API Key di OpenRouter non trovata! Impostala come variabile d'ambiente o in st.secrets.")
     st.stop()
+else:
+    # Verifica la validità della chiave API
+    try:
+        test_response = client.chat.completions.create(model="google/gemini-2.0-pro-exp-02-05:free", messages=[{"role": "system", "content": "Test"}])
+        if not test_response:
+            st.error("⚠️ Errore: Chiave API non valida!")
+            st.stop()
+    except Exception as e:
+        st.error(f"⚠️ Errore di connessione all'API: {e}")
+        st.stop()
 
 client = openai.OpenAI(api_key=API_KEY, base_url="https://openrouter.ai/api/v1")
 
@@ -68,10 +108,10 @@ compiled_patterns = [re.compile(p, re.IGNORECASE) for p in CRITICAL_PATTERNS]
 ########################################
 TONE_OPTIONS = {
     "Stile originale": "Mantieni lo stesso stile e struttura del testo originale.",
-    "Formale": "Riscrivi in modo formale e professionale.",
-    "Informale": "Riscrivi in modo amichevole e colloquiale.",
-    "Tecnico": "Riscrivi con linguaggio tecnico e preciso.",
-    "Narrativo": "Riscrivi in modo descrittivo e coinvolgente.",
+    "Formale": "Riscrivi in modo formale e professionale, adatto a documenti ufficiali.",
+    "Informale": "Riscrivi in modo amichevole e colloquiale, adatto a comunicazioni informali.",
+    "Tecnico": "Riscrivi con linguaggio tecnico e preciso, adatto ad un manuale tecnico.",
+    "Narrativo": "Riscrivi in modo descrittivo e coinvolgente stile racconto.",
     "Pubblicitario": "Riscrivi in modo persuasivo, come una pubblicità.",
     "Giornalistico": "Riscrivi in tono chiaro e informativo.",
 }
@@ -85,16 +125,16 @@ def ai_convert_first_singular_to_plural(text):
         "Mantieni invariato il contenuto e il senso logico.\n\n"
         f"Testo originale:\n{text}"
     )
+      if not text.strip():
+        return ""
     try:
         response = client.chat.completions.create(
             model="google/gemini-2.0-pro-exp-02-05:free",
             messages=[{"role": "system", "content": prompt}],
-            max_tokens=500
+            max_tokens=500,
+            timeout=10  # Timeout di 10 secondi
         )
-        if response and hasattr(response, "choices") and response.choices:
-            return response.choices[0].message.content.strip()
-        logger.error("⚠️ Errore: Nessun testo valido restituito dall'API.")
-        return ""
+        return response.choices[0].message.content.strip()
     except Exception as e:
         logger.error(f"⚠️ Errore nell'elaborazione: {e}")
         return ""
@@ -209,8 +249,7 @@ def process_file_content(file_content, file_extension):
 def process_doc_file(uploaded_file):
     try:
         doc = Document(uploaded_file)
-        paragraphs = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
-        return paragraphs
+        return [p.text.strip() for p in doc.paragraphs if p.text.strip()]
     except Exception as e:
         st.error(f"Errore nell'apertura del file Word: {e}")
         st.stop()
@@ -253,7 +292,8 @@ def process_pdf_with_overlay(uploaded_file, modifications):
 ########################################
 modalita = st.radio(
     "Modalità di revisione:",
-    ("Riscrittura blocchi critici", "Conversione completa in plurale", "Blocchi critici + conversione completa")
+    ("Riscrittura blocchi critici", "Conversione completa in plurale", "Blocchi critici + conversione completa"),
+    help="Scegli la modalità di revisione più adatta alle tue esigenze."
 )
 global_conversion = modalita in ["Conversione completa in plurale", "Blocchi critici + conversione completa"]
 
@@ -262,9 +302,11 @@ global_conversion = modalita in ["Conversione completa in plurale", "Blocchi cri
 ########################################
 st.title("📄 Revisione Documenti")
 st.write("Carica un file (HTML, Markdown, Word o PDF) e scegli come intervenire sul testo.")
-
+    
 uploaded_file = st.file_uploader("📂 Seleziona un file (html, md, doc, docx, pdf)", type=["html", "md", "doc", "docx", "pdf"])
-
+with st.spinner("Elaborazione in corso..."):
+    # Codice di elaborazione
+    
 if uploaded_file is not None:
     # Leggi il file una sola volta e salva i byte
     file_bytes = uploaded_file.read()
