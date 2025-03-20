@@ -207,6 +207,13 @@ def filtra_blocchi(blocchi):
 st.title("📄 Revisione Documenti")
 st.write("Carica un file (HTML, Markdown, Word o PDF) e scegli come intervenire sul testo.")
 
+# Definizione della modalità
+modalita = st.radio(
+    "Modalità di revisione:",
+    ("Riscrittura blocchi critici", "Conversione completa in plurale", "Blocchi critici + conversione completa"),
+    help="Scegli la modalità di revisione più adatta alle tue esigenze."
+)
+
 uploaded_file = st.file_uploader("📂 Seleziona un file (html, md, doc, docx, pdf)", type=["html", "md", "doc", "docx", "pdf"])
 
 if uploaded_file is not None:
