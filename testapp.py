@@ -184,7 +184,9 @@ def process_pdf_file(uploaded_file):
         st.stop()
 
 def filtra_blocchi(blocchi):
-    return {f"{i}_{b}": b for i, b in enumerate(blocchi) if any(pattern.search(b) for pattern in compiled_patterns)}
+    # Rimuovi duplicati mantenendo l'ordine
+    blocchi_unici = list(dict.fromkeys(blocchi))
+    return {f"{i}_{b}": b for i, b in enumerate(blocchi_unici) if any(pattern.search(b) for pattern in compiled_patterns)}
 
 # Logica principale
 ########################################
