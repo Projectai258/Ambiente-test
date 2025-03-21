@@ -4,6 +4,7 @@ import os
 import re
 import logging
 import io
+import json
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
 import markdown
@@ -46,7 +47,7 @@ if not API_KEY:
     st.error("⚠️ Errore: API Key di OpenRouter non trovata! Impostala come variabile d'ambiente.")
     st.stop()
 
-# Verifica la validità della chiave API
+# Verifica della chiave API
 try:
     client = openai.OpenAI(api_key=API_KEY, base_url="https://openrouter.ai/api/v1")
     test_response = client.chat.completions.create(
@@ -60,13 +61,28 @@ except Exception as e:
     st.error(f"⚠️ Errore di connessione all'API: {e}")
     st.stop()
 
-# Pattern critici per la revisione
+# Pattern critici per la revisione (aggiornati per includere anche frasi come "io e ...")
 CRITICAL_PATTERNS = [
-    r"\bIlias Contreas\b", r"\bIlias\b", r"\bContreas\b", r"\bJoey\b", r"\bMya\b",
-    r"\bmia moglie\b", r"\bmia figlia\b", r"\bShake Your English\b", r"\bBarman PR\b",
-    r"\bStairs Club\b", r"\bil mio socio\b", r"\bio e il mio socio\b", r"\bil mio corso\b",
-    r"\bla mia accademia\b", r"\bintervista\b", r"Mi chiamo .*? la mia esperienza personale\.",
-    r"\bflair\b", r"\bfiglio di papà\b", r"\bhappy our\b",
+    r"\bIlias Contreas\b",
+    r"\bIlias\b",
+    r"\bContreas\b",
+    r"\bJoey\b",
+    r"\bMya\b",
+    r"\bmia moglie\b",
+    r"\bmia figlia\b",
+    r"\bShake Your English\b",
+    r"\bBarman PR\b",
+    r"\bStairs Club\b",
+    r"\bil mio socio\b",
+    r"\bio e il mio socio\b",
+    r"\bil mio corso\b",
+    r"\bla mia accademia\b",
+    r"\bintervista\b",
+    r"Mi chiamo .*? la mia esperienza personale\.",
+    r"\bflair\b",
+    r"\bfiglio di papà\b",
+    r"\bhappy our\b",
+    r"\bio e\b\s+.+"  # Nuovo pattern per catturare frasi che iniziano con "io e"
 ]
 compiled_patterns = [re.compile(p, re.IGNORECASE) for p in CRITICAL_PATTERNS]
 
@@ -150,6 +166,68 @@ def ai_rewrite_text(text, prev_text, next_text, tone):
         logger.error(f"⚠️ Errore nell'elaborazione: {e}")
         return ""
 
+def ai_analyze_block(prev_text, text, next_text):
+    """
+    Analizza il blocco di testo, considerando il contesto (precedente e successivo),
+    per valutare la presenza di informazioni sensibili, con particolare attenzione a frasi che iniziano con "io e".
+    
+    Risponde in formato JSON:
+    {
+      "classificazione": "Critico" o "Non critico",
+      "motivazione": "Descrizione sintetica degli elementi problematici (se presenti)"
+    }
+    """
+    prompt = f"""Contesto:
+Precedente: {prev_text}
+Testo: {text}
+Successivo: {next_text}
+
+Analizza il blocco di testo e valuta se contiene riferimenti a dati personali, identità, relazioni o altre informazioni sensibili, con particolare attenzione a frasi che iniziano con "io e". 
+Rispondi nel seguente formato JSON:
+{{
+  "classificazione": "Critico" o "Non critico",
+  "motivazione": "Breve descrizione degli elementi problematici, se presenti."
+}}
+"""
+    try:
+        response = client.chat.completions.create(
+            model="google/gemini-2.0-pro-exp-02-05:free",
+            messages=[{"role": "system", "content": prompt}],
+            max_tokens=150
+        )
+        if response and hasattr(response, "choices") and response.choices:
+            return response.choices[0].message.content.strip()
+        logger.error("⚠️ Errore: Nessun testo valido restituito dall'API per l'analisi del blocco.")
+        return None
+    except Exception as e:
+        logger.error(f"⚠️ Errore nell'analisi del blocco: {e}")
+        return None
+
+def filtra_blocchi_avanzata(blocchi):
+    """
+    Filtra i blocchi di testo per individuare quelli critici.
+    Il filtro utilizza due approcci:
+      1. Controllo tramite regex (con i pattern definiti).
+      2. Analisi contestuale tramite API, usando un prompt strutturato.
+    Se almeno uno dei due approcci segnala il blocco come critico, esso viene restituito.
+    """
+    blocchi_filtrati = {}
+    for i, blocco in enumerate(blocchi):
+        # Verifica con regex
+        regex_match = any(pattern.search(blocco) for pattern in compiled_patterns)
+        # Analisi contestuale (senza contesto, oppure con eventuale logica per recuperare prev/next)
+        analysis = ai_analyze_block("", blocco, "")
+        classification = "Non critico"
+        if analysis:
+            try:
+                result = json.loads(analysis)
+                classification = result.get("classificazione", "Non critico")
+            except Exception as e:
+                logger.error(f"Errore nel parsing dell'analisi: {e}")
+        if regex_match or (classification == "Critico"):
+            blocchi_filtrati[f"{i}_{blocco}"] = blocco
+    return blocchi_filtrati
+
 def process_file_content(file_content, file_extension):
     if file_extension == "html":
         soup = BeautifulSoup(file_content, "html.parser")
@@ -183,23 +261,15 @@ def process_pdf_file(uploaded_file):
         st.error(f"Errore nell'apertura del file PDF: {e}")
         st.stop()
 
-def filtra_blocchi(blocchi):
-    # Rimuove duplicati mantenendo l'ordine e filtra per pattern critici
-    blocchi_unici = list(dict.fromkeys(blocchi))
-    return {f"{i}_{b}": b for i, b in enumerate(blocchi_unici) if any(pattern.search(b) for pattern in compiled_patterns)}
-
 def process_html_content(html_content: str, modifications: dict, highlight: bool = False) -> str:
     """
     Applica le modifiche al contenuto HTML.
 
     Parametri:
       html_content (str): il contenuto HTML originale.
-      modifications (dict): un dizionario dove le chiavi sono i blocchi di testo originali da sostituire
-                            e i valori sono le versioni modificate (eventualmente vuote per eliminazioni).
+      modifications (dict): dizionario in cui le chiavi sono i blocchi originali da sostituire e
+                            i valori sono le versioni modificate (o stringa vuota per eliminazioni).
       highlight (bool): se True, evidenzia il testo modificato racchiudendolo in un tag <mark>.
-
-    Ritorna:
-      str: il contenuto HTML con le modifiche applicate.
     """
     for original, new_text in modifications.items():
         replacement = f"<mark>{new_text}</mark>" if highlight and new_text else new_text
@@ -207,7 +277,6 @@ def process_html_content(html_content: str, modifications: dict, highlight: bool
         html_content = re.sub(pattern, replacement, html_content)
     return html_content
 
-# Funzione ausiliaria per elaborare il PDF con le modifiche
 def process_pdf_content_with_overlay(pdf_file, modifications):
     """
     Esempio di funzione che elabora il PDF originale applicando le modifiche dei blocchi.
@@ -256,15 +325,16 @@ if uploaded_file is not None:
             blocchi, html_content = process_file_content(file_content, file_extension)
             st.session_state.blocchi = blocchi
             st.session_state.html_content = html_content
-            st.session_state.blocchi_da_revisionare = filtra_blocchi(blocchi)
+            # Usa il nuovo filtro avanzato che integra regex e analisi contestuale
+            st.session_state.blocchi_da_revisionare = filtra_blocchi_avanzata(blocchi)
         elif file_extension in ["doc", "docx"]:
             paragraphs = process_doc_file(io.BytesIO(file_bytes))
             st.session_state.paragraphs = paragraphs
-            st.session_state.blocchi_da_revisionare = filtra_blocchi(paragraphs)
+            st.session_state.blocchi_da_revisionare = filtra_blocchi_avanzata(paragraphs)
         elif file_extension == "pdf":
             paragraphs = process_pdf_file(io.BytesIO(file_bytes))
             st.session_state.paragraphs = paragraphs
-            st.session_state.blocchi_da_revisionare = filtra_blocchi(paragraphs)
+            st.session_state.blocchi_da_revisionare = filtra_blocchi_avanzata(paragraphs)
         st.session_state.file_processed = True
 
     # Modalità "Conversione completa in plurale"
@@ -339,19 +409,15 @@ if uploaded_file is not None:
                 )
     # Modalità "Riscrittura blocchi critici" (o combinata)
     else:
-        # Se ci sono blocchi da revisionare...
         if st.session_state.blocchi_da_revisionare:
             with st.form("blocchi_form"):
                 st.subheader("📌 Blocchi da revisionare")
                 scelte_utente = {}
-                # Per HTML/Markdown i blocchi sono in st.session_state.blocchi
-                # Per doc/pdf i blocchi sono i paragrafi salvati in st.session_state.paragraphs
                 if file_extension in ["html", "md"]:
                     blocchi = st.session_state.blocchi
                 else:
                     blocchi = st.session_state.paragraphs
 
-                # Crea widget per ogni blocco (senza rielaborare l'analisi ad ogni scelta)
                 for uid, blocco in st.session_state.blocchi_da_revisionare.items():
                     st.markdown(f"**{blocco}**")
                     azione = st.radio("Azione per questo blocco:", ["Riscrivi", "Elimina", "Ignora"], key=f"action_{uid}")
