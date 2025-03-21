@@ -61,7 +61,7 @@ except Exception as e:
     st.error(f"⚠️ Errore di connessione all'API: {e}")
     st.stop()
 
-# Pattern critici per la revisione (incluso nuovo pattern per "io e ...")
+# Pattern critici per la revisione (aggiornati per includere anche frasi come "io e ...")
 CRITICAL_PATTERNS = [
     r"\bIlias Contreas\b",
     r"\bIlias\b",
@@ -120,7 +120,7 @@ def ai_convert_first_singular_to_plural(text):
         logger.error("⚠️ Errore: Nessun testo valido restituito dall'API per la conversione in plurale.")
         return ""
     except Exception as e:
-        logger.error(f"⚠️ Errore nell'elaborazione della conversione: {e}")
+        logger.error(f"⚠️ Errore nell'elaborazione (conversione in plurale): {e}")
         return ""
 
 def convert_plain_text_to_minimal_html(text):
@@ -160,19 +160,29 @@ def ai_rewrite_text(text, prev_text, next_text, tone):
         )
         if response and hasattr(response, "choices") and response.choices:
             return response.choices[0].message.content.strip()
-        logger.error("⚠️ Errore: Nessun testo valido restituito dall'API per la riscrittura.")
+        logger.error("⚠️ Errore: Nessun testo valido restituito dall'API per la riscrittura del blocco.")
         return ""
     except Exception as e:
-        logger.error(f"⚠️ Errore nell'elaborazione della riscrittura: {e}")
+        logger.error(f"⚠️ Errore nell'elaborazione (riscrittura del blocco): {e}")
         return ""
 
 def ai_analyze_block(prev_text, text, next_text):
+    """
+    Analizza il blocco di testo, considerando il contesto (precedente e successivo),
+    per valutare la presenza di informazioni sensibili, con particolare attenzione a frasi che iniziano con "io e".
+    
+    La risposta attesa deve essere in formato JSON esattamente come:
+    {
+      "classificazione": "Critico" o "Non critico",
+      "motivazione": "Descrizione sintetica degli elementi problematici, se presenti"
+    }
+    """
     prompt = f"""Contesto:
 Precedente: {prev_text}
 Testo: {text}
 Successivo: {next_text}
 
-Analizza il blocco di testo e indica se è "Critico" o "Non critico" in base alla presenza di informazioni sensibili o riferimenti personali, in particolare frasi che iniziano con "io e". 
+Analizza il blocco di testo e indica se è "Critico" o "Non critico" in base alla presenza di informazioni sensibili, dati personali o riferimenti problematici, con particolare attenzione a frasi che iniziano con "io e". 
 Rispondi esattamente in questo formato JSON:
 {{
   "classificazione": "Critico" o "Non critico",
@@ -196,20 +206,27 @@ Rispondi esattamente in questo formato JSON:
         return None
 
 def filtra_blocchi_avanzata(blocchi):
+    """
+    Filtra i blocchi di testo per individuare quelli critici.
+    Il filtro utilizza due approcci:
+      1. Controllo tramite regex (con i pattern definiti).
+      2. Analisi contestuale tramite API, usando un prompt strutturato.
+    Se almeno uno dei due approcci segnala il blocco come critico, esso viene restituito.
+    """
     blocchi_filtrati = {}
     for i, blocco in enumerate(blocchi):
-        # Controllo tramite regex
+        # Verifica tramite regex
         regex_match = any(pattern.search(blocco) for pattern in compiled_patterns)
-        # Analisi contestuale tramite API
+        # Analisi contestuale
         analysis = ai_analyze_block("", blocco, "")
-        classification = "Non critico"
+        classification = "Non critico"  # fallback di default
         if analysis:
             try:
                 result = json.loads(analysis)
                 classification = result.get("classificazione", "Non critico")
             except Exception as e:
                 logger.error(f"Errore nel parsing dell'analisi: {e}")
-        # Se almeno uno dei due metodi segnala il blocco come critico, lo aggiungiamo
+        # Se almeno uno segnala criticità, includi il blocco
         if regex_match or (classification == "Critico"):
             blocchi_filtrati[f"{i}_{blocco}"] = blocco
     return blocchi_filtrati
@@ -248,6 +265,15 @@ def process_pdf_file(uploaded_file):
         st.stop()
 
 def process_html_content(html_content: str, modifications: dict, highlight: bool = False) -> str:
+    """
+    Applica le modifiche al contenuto HTML.
+
+    Parametri:
+      html_content (str): il contenuto HTML originale.
+      modifications (dict): dizionario in cui le chiavi sono i blocchi originali da sostituire e
+                            i valori sono le versioni modificate (o stringa vuota per eliminazioni).
+      highlight (bool): se True, evidenzia il testo modificato racchiudendolo in un tag <mark>.
+    """
     for original, new_text in modifications.items():
         replacement = f"<mark>{new_text}</mark>" if highlight and new_text else new_text
         pattern = re.escape(original)
@@ -255,6 +281,11 @@ def process_html_content(html_content: str, modifications: dict, highlight: bool
     return html_content
 
 def process_pdf_content_with_overlay(pdf_file, modifications):
+    """
+    Esempio di funzione che elabora il PDF originale applicando le modifiche dei blocchi.
+    In una implementazione reale si potrebbe utilizzare reportlab o un altro strumento per creare un nuovo PDF.
+    Per questo esempio restituiamo semplicemente il contenuto originale del PDF.
+    """
     pdf_file.seek(0)
     return pdf_file.read()
 
@@ -264,12 +295,14 @@ def process_pdf_content_with_overlay(pdf_file, modifications):
 st.title("📄 Revisione Documenti")
 st.write("Carica un file (HTML, Markdown, Word o PDF) e scegli come intervenire sul testo.")
 
+# Selezione modalità
 modalita = st.radio(
     "Modalità di revisione:",
     ("Riscrittura blocchi critici", "Conversione completa in plurale", "Blocchi critici + conversione completa"),
     help="Scegli la modalità di revisione più adatta alle tue esigenze."
 )
 
+# Checkbox per conversione globale
 global_conversion = st.checkbox(
     "Applicare conversione globale in plurale",
     value=False,
@@ -306,6 +339,7 @@ if uploaded_file is not None:
             st.session_state.blocchi_da_revisionare = filtra_blocchi_avanzata(paragraphs)
         st.session_state.file_processed = True
 
+    # Modalità "Conversione completa in plurale"
     if modalita == "Conversione completa in plurale":
         if file_extension in ["html", "md"]:
             file_content = file_bytes.decode("utf-8")
@@ -375,6 +409,7 @@ if uploaded_file is not None:
                     file_name="document_revised.pdf",
                     mime="application/pdf"
                 )
+    # Modalità "Riscrittura blocchi critici" (o combinata)
     else:
         if st.session_state.blocchi_da_revisionare:
             with st.form("blocchi_form"):
