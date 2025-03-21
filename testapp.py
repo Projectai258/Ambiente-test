@@ -202,13 +202,20 @@ def process_html_content(html_content: str, modifications: dict, highlight: bool
       str: il contenuto HTML con le modifiche applicate.
     """
     for original, new_text in modifications.items():
-        if highlight and new_text:
-            replacement = f"<mark>{new_text}</mark>"
-        else:
-            replacement = new_text
+        replacement = f"<mark>{new_text}</mark>" if highlight and new_text else new_text
         pattern = re.escape(original)
         html_content = re.sub(pattern, replacement, html_content)
     return html_content
+
+# Funzione ausiliaria per elaborare il PDF con le modifiche
+def process_pdf_content_with_overlay(pdf_file, modifications):
+    """
+    Esempio di funzione che elabora il PDF originale applicando le modifiche dei blocchi.
+    In una implementazione reale si potrebbe utilizzare reportlab o un altro strumento per creare un nuovo PDF.
+    Per questo esempio restituiamo semplicemente il contenuto originale del PDF.
+    """
+    pdf_file.seek(0)
+    return pdf_file.read()
 
 # Logica principale dell'applicazione
 ########################################
@@ -242,6 +249,25 @@ if uploaded_file is not None:
         st.error(f"Errore durante la lettura del file: {e}")
         st.stop()
 
+    # Elaborazione del file (solo una volta) e salvataggio in session_state
+    if "file_processed" not in st.session_state:
+        if file_extension in ["html", "md"]:
+            file_content = file_bytes.decode("utf-8")
+            blocchi, html_content = process_file_content(file_content, file_extension)
+            st.session_state.blocchi = blocchi
+            st.session_state.html_content = html_content
+            st.session_state.blocchi_da_revisionare = filtra_blocchi(blocchi)
+        elif file_extension in ["doc", "docx"]:
+            paragraphs = process_doc_file(io.BytesIO(file_bytes))
+            st.session_state.paragraphs = paragraphs
+            st.session_state.blocchi_da_revisionare = filtra_blocchi(paragraphs)
+        elif file_extension == "pdf":
+            paragraphs = process_pdf_file(io.BytesIO(file_bytes))
+            st.session_state.paragraphs = paragraphs
+            st.session_state.blocchi_da_revisionare = filtra_blocchi(paragraphs)
+        st.session_state.file_processed = True
+
+    # Modalità "Conversione completa in plurale"
     if modalita == "Conversione completa in plurale":
         if file_extension in ["html", "md"]:
             file_content = file_bytes.decode("utf-8")
@@ -311,32 +337,33 @@ if uploaded_file is not None:
                     file_name="document_revised.pdf",
                     mime="application/pdf"
                 )
+    # Modalità "Riscrittura blocchi critici" (o combinata)
     else:
-        modifications = {}
-        scelte_utente = {}
-
-        if file_extension in ["html", "md"]:
-            file_content = file_bytes.decode("utf-8")
-            blocchi, html_content = process_file_content(file_content, file_extension)
-            blocchi_da_revisionare = filtra_blocchi(blocchi)
-            if blocchi_da_revisionare:
+        # Se ci sono blocchi da revisionare...
+        if st.session_state.blocchi_da_revisionare:
+            with st.form("blocchi_form"):
                 st.subheader("📌 Blocchi da revisionare")
-                progress_text = st.empty()
-                progress_bar = st.progress(0)
-                total = len(blocchi_da_revisionare)
-                count = 0
-                for uid, blocco in blocchi_da_revisionare.items():
+                scelte_utente = {}
+                # Per HTML/Markdown i blocchi sono in st.session_state.blocchi
+                # Per doc/pdf i blocchi sono i paragrafi salvati in st.session_state.paragraphs
+                if file_extension in ["html", "md"]:
+                    blocchi = st.session_state.blocchi
+                else:
+                    blocchi = st.session_state.paragraphs
+
+                # Crea widget per ogni blocco (senza rielaborare l'analisi ad ogni scelta)
+                for uid, blocco in st.session_state.blocchi_da_revisionare.items():
                     st.markdown(f"**{blocco}**")
                     azione = st.radio("Azione per questo blocco:", ["Riscrivi", "Elimina", "Ignora"], key=f"action_{uid}")
                     tono = None
                     if azione == "Riscrivi":
                         tono = st.selectbox("Scegli il tono:", list(TONE_OPTIONS.keys()), key=f"tone_{uid}")
                     scelte_utente[blocco] = {"azione": azione, "tono": tono}
-                    count += 1
-                    progress_bar.progress(count / total)
-                    progress_text.text(f"Elaborati {count} di {total} blocchi...")
-
-                if st.button("✍️ Genera Documento Revisionato"):
+                submitted = st.form_submit_button("✍️ Genera Documento Revisionato")
+            if submitted:
+                modifications = {}
+                if file_extension in ["html", "md"]:
+                    html_content = st.session_state.html_content
                     for blocco, info in scelte_utente.items():
                         if info["azione"] == "Riscrivi":
                             prev_blocco, next_blocco = extract_context(blocchi, blocco)
@@ -358,40 +385,17 @@ if uploaded_file is not None:
                         file_name="document_revised.html",
                         mime="text/html"
                     )
-            else:
-                st.info("Non sono state trovate corrispondenze per i criteri di ricerca nel testo.")
-        elif file_extension in ["doc", "docx"]:
-            paragraphs = process_doc_file(io.BytesIO(file_bytes))
-            blocchi_da_revisionare = filtra_blocchi(paragraphs)
-            if blocchi_da_revisionare:
-                st.subheader("📌 Paragrafi da revisionare")
-                progress_text = st.empty()
-                progress_bar = st.progress(0)
-                total = len(blocchi_da_revisionare)
-                count = 0
-                for uid, paragrafo in blocchi_da_revisionare.items():
-                    st.markdown(f"**{paragrafo}**")
-                    azione = st.radio("Azione per questo paragrafo:", ["Riscrivi", "Elimina", "Ignora"], key=f"action_{uid}")
-                    tono = None
-                    if azione == "Riscrivi":
-                        tono = st.selectbox("Scegli il tono:", list(TONE_OPTIONS.keys()), key=f"tone_{uid}")
-                    scelte_utente[paragrafo] = {"azione": azione, "tono": tono}
-                    count += 1
-                    progress_bar.progress(count / total)
-                    progress_text.text(f"Elaborati {count} di {total} paragrafi...")
-
-                if st.button("✍️ Genera Documento Revisionato"):
-                    modifications = {}
+                elif file_extension in ["doc", "docx"]:
                     for paragrafo, info in scelte_utente.items():
                         if info["azione"] == "Riscrivi":
-                            prev_par, next_par = extract_context(paragraphs, paragrafo)
+                            prev_par, next_par = extract_context(blocchi, paragrafo)
                             mod_par = ai_rewrite_text(paragrafo, prev_par, next_par, info["tono"])
                             modifications[paragrafo] = mod_par
                         elif info["azione"] == "Elimina":
                             modifications[paragrafo] = ""
                         else:
                             modifications[paragrafo] = paragrafo
-                    full_text = "\n".join([modifications.get(p, p) for p in paragraphs])
+                    full_text = "\n".join([modifications.get(p, p) for p in blocchi])
                     if global_conversion:
                         full_text = ai_convert_first_singular_to_plural(full_text)
                     new_doc = Document()
@@ -406,33 +410,10 @@ if uploaded_file is not None:
                         file_name="document_revised.docx",
                         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                     )
-            else:
-                st.info("Non sono state trovate corrispondenze per i criteri di ricerca nel documento Word.")
-        elif file_extension == "pdf":
-            paragraphs = process_pdf_file(io.BytesIO(file_bytes))
-            blocchi_da_revisionare = filtra_blocchi(paragraphs)
-            if blocchi_da_revisionare:
-                st.subheader("📌 Blocchi di testo da revisionare (PDF)")
-                progress_text = st.empty()
-                progress_bar = st.progress(0)
-                total = len(blocchi_da_revisionare)
-                count = 0
-                for uid, blocco in blocchi_da_revisionare.items():
-                    st.markdown(f"**{blocco}**")
-                    azione = st.radio("Azione per questo blocco:", ["Riscrivi", "Elimina", "Ignora"], key=f"action_{uid}")
-                    tono = None
-                    if azione == "Riscrivi":
-                        tono = st.selectbox("Scegli il tono:", list(TONE_OPTIONS.keys()), key=f"tone_{uid}")
-                    scelte_utente[blocco] = {"azione": azione, "tono": tono}
-                    count += 1
-                    progress_bar.progress(count / total)
-                    progress_text.text(f"Elaborati {count} di {total} blocchi...")
-
-                if st.button("✍️ Genera PDF Revisionato"):
-                    modifications = {}
+                elif file_extension == "pdf":
                     for blocco, info in scelte_utente.items():
                         if info["azione"] == "Riscrivi":
-                            prev_blocco, next_blocco = extract_context(paragraphs, blocco)
+                            prev_blocco, next_blocco = extract_context(blocchi, blocco)
                             mod_blocco = ai_rewrite_text(blocco, prev_blocco, next_blocco, info["tono"])
                             modifications[blocco] = mod_blocco
                         elif info["azione"] == "Elimina":
@@ -443,7 +424,6 @@ if uploaded_file is not None:
                         for key in modifications:
                             modifications[key] = ai_convert_first_singular_to_plural(modifications[key])
                     with st.spinner("🔄 Riscrittura in corso..."):
-                        # Funzione ausiliaria per processare il PDF con le modifiche
                         revised_pdf = process_pdf_content_with_overlay(io.BytesIO(file_bytes), modifications)
                     st.success("✅ Revisione completata!")
                     st.download_button(
@@ -452,15 +432,5 @@ if uploaded_file is not None:
                         file_name="document_revised.pdf",
                         mime="application/pdf"
                     )
-            else:
-                st.info("Non sono state trovate corrispondenze per i criteri di ricerca nel documento PDF.")
-
-# Funzione ausiliaria per elaborare il PDF con le modifiche (da implementare in base alle esigenze)
-def process_pdf_content_with_overlay(pdf_file, modifications):
-    """
-    Esempio di funzione che elabora il PDF originale applicando le modifiche dei blocchi.
-    In una implementazione reale si potrebbe utilizzare reportlab o un altro strumento per creare un nuovo PDF.
-    Per questo esempio restituiamo semplicemente il contenuto originale del PDF.
-    """
-    pdf_file.seek(0)
-    return pdf_file.read()
+        else:
+            st.info("Non sono state trovate corrispondenze per i criteri di ricerca nel documento.")
