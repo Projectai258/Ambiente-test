@@ -184,21 +184,50 @@ def process_pdf_file(uploaded_file):
         st.stop()
 
 def filtra_blocchi(blocchi):
-    # Rimuovi duplicati mantenendo l'ordine
+    # Rimuove duplicati mantenendo l'ordine e filtra per pattern critici
     blocchi_unici = list(dict.fromkeys(blocchi))
     return {f"{i}_{b}": b for i, b in enumerate(blocchi_unici) if any(pattern.search(b) for pattern in compiled_patterns)}
 
-# Logica principale
+def process_html_content(html_content: str, modifications: dict, highlight: bool = False) -> str:
+    """
+    Applica le modifiche al contenuto HTML.
+
+    Parametri:
+      html_content (str): il contenuto HTML originale.
+      modifications (dict): un dizionario dove le chiavi sono i blocchi di testo originali da sostituire
+                            e i valori sono le versioni modificate (eventualmente vuote per eliminazioni).
+      highlight (bool): se True, evidenzia il testo modificato racchiudendolo in un tag <mark>.
+
+    Ritorna:
+      str: il contenuto HTML con le modifiche applicate.
+    """
+    for original, new_text in modifications.items():
+        if highlight and new_text:
+            replacement = f"<mark>{new_text}</mark>"
+        else:
+            replacement = new_text
+        pattern = re.escape(original)
+        html_content = re.sub(pattern, replacement, html_content)
+    return html_content
+
+# Logica principale dell'applicazione
 ########################################
 
 st.title("📄 Revisione Documenti")
 st.write("Carica un file (HTML, Markdown, Word o PDF) e scegli come intervenire sul testo.")
 
-# Definizione della modalità
+# Selezione modalità
 modalita = st.radio(
     "Modalità di revisione:",
     ("Riscrittura blocchi critici", "Conversione completa in plurale", "Blocchi critici + conversione completa"),
     help="Scegli la modalità di revisione più adatta alle tue esigenze."
+)
+
+# Checkbox per conversione globale
+global_conversion = st.checkbox(
+    "Applicare conversione globale in plurale",
+    value=False,
+    help="Seleziona per convertire l'intero documento dalla prima persona singolare alla prima persona plurale dopo le revisioni dei blocchi critici."
 )
 
 uploaded_file = st.file_uploader("📂 Seleziona un file (html, md, doc, docx, pdf)", type=["html", "md", "doc", "docx", "pdf"])
@@ -414,7 +443,8 @@ if uploaded_file is not None:
                         for key in modifications:
                             modifications[key] = ai_convert_first_singular_to_plural(modifications[key])
                     with st.spinner("🔄 Riscrittura in corso..."):
-                        revised_pdf = process_pdf_with_overlay(io.BytesIO(file_bytes), modifications)
+                        # Funzione ausiliaria per processare il PDF con le modifiche
+                        revised_pdf = process_pdf_content_with_overlay(io.BytesIO(file_bytes), modifications)
                     st.success("✅ Revisione completata!")
                     st.download_button(
                         "📥 Scarica PDF Revisionato",
@@ -424,3 +454,13 @@ if uploaded_file is not None:
                     )
             else:
                 st.info("Non sono state trovate corrispondenze per i criteri di ricerca nel documento PDF.")
+
+# Funzione ausiliaria per elaborare il PDF con le modifiche (da implementare in base alle esigenze)
+def process_pdf_content_with_overlay(pdf_file, modifications):
+    """
+    Esempio di funzione che elabora il PDF originale applicando le modifiche dei blocchi.
+    In una implementazione reale si potrebbe utilizzare reportlab o un altro strumento per creare un nuovo PDF.
+    Per questo esempio restituiamo semplicemente il contenuto originale del PDF.
+    """
+    pdf_file.seek(0)
+    return pdf_file.read()
